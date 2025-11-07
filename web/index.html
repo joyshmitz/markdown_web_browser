@@ -6,11 +6,93 @@
     <title>Markdown Web Browser</title>
     <link rel="stylesheet" href="/static/tailwind.css" />
   </head>
-  <body>
-    <div id="app" hx-ext="sse" hx-sse="connect:/jobs/placeholder/stream">
-      <h1>Markdown Web Browser</h1>
-      <p>This is a placeholder shell; HTMX/Alpine wiring arrives in later milestones.</p>
+  <body class="app-body">
+    <div class="app-shell" hx-ext="sse" hx-sse="connect:/jobs/demo/stream">
+      <header class="toolbar">
+        <div class="toolbar__group">
+          <label class="toolbar__label" for="job-url">URL</label>
+          <input id="job-url" name="url" type="url" placeholder="https://example.com/article" class="toolbar__input" />
+        </div>
+        <div class="toolbar__group">
+          <label class="toolbar__label" for="ocr-policy">OCR Policy</label>
+          <select id="ocr-policy" name="ocr_policy" class="toolbar__input">
+            <option value="olmocr-2-7b-1025-fp8" selected>olmOCR-2-7B-1025-FP8</option>
+            <option value="olmocr-2-7b-1025">olmOCR-2-7B-1025 (FP16)</option>
+          </select>
+        </div>
+        <div class="toolbar__group">
+          <label class="toolbar__label" for="profile">Profile</label>
+          <select id="profile" name="profile_id" class="toolbar__input">
+            <option value="default" selected>Default</option>
+            <option value="research">Research</option>
+          </select>
+        </div>
+        <button class="toolbar__button" type="button" id="run-job">Run Capture</button>
+      </header>
+
+      <section class="status-grid">
+        <article class="status-card">
+          <p class="status-label">State</p>
+          <p class="status-value" id="job-state" hx-sse="swap:state">Waiting for job…</p>
+        </article>
+        <article class="status-card">
+          <p class="status-label">Progress</p>
+          <p class="status-value" id="job-progress" hx-sse="swap:progress">0 / 0 tiles</p>
+        </article>
+        <article class="status-card">
+          <p class="status-label">CfT / Playwright</p>
+          <p class="status-value" id="job-runtime" hx-sse="swap:runtime">–</p>
+        </article>
+        <article class="status-card">
+          <p class="status-label">SSE</p>
+          <p class="status-value" id="job-sse-status">Disconnected</p>
+        </article>
+      </section>
+
+      <section class="tabs" data-tabs>
+        <div class="tab-list" role="tablist">
+          <button type="button" role="tab" class="tab" data-tab-target="rendered">Rendered Markdown</button>
+          <button type="button" role="tab" class="tab" data-tab-target="raw">Raw Markdown</button>
+          <button type="button" role="tab" class="tab" data-tab-target="artifacts">Artifacts</button>
+          <button type="button" role="tab" class="tab" data-tab-target="links">Links</button>
+          <button type="button" role="tab" class="tab" data-tab-target="manifest">Manifest</button>
+          <button type="button" role="tab" class="tab" data-tab-target="embeddings">Embeddings</button>
+          <button type="button" role="tab" class="tab" data-tab-target="events">Events</button>
+        </div>
+
+        <div class="tab-panels">
+          <article class="tab-panel" data-tab-panel="rendered">
+            <h2>Rendered Markdown</h2>
+            <p class="placeholder">Streaming preview will render here as soon as OCR tiles arrive.</p>
+          </article>
+          <article class="tab-panel" data-tab-panel="raw" hidden>
+            <h2>Raw Markdown</h2>
+            <pre class="placeholder">Waiting on OCR output…</pre>
+          </article>
+          <article class="tab-panel" data-tab-panel="artifacts" hidden>
+            <h2>Artifacts</h2>
+            <p class="placeholder">Tile gallery + provenance metadata coming soon.</p>
+          </article>
+          <article class="tab-panel" data-tab-panel="links" hidden>
+            <h2>Links</h2>
+            <p class="placeholder">DOM vs OCR link delta table will populate once capture jobs run.</p>
+          </article>
+          <article class="tab-panel" data-tab-panel="manifest" hidden>
+            <h2>Manifest</h2>
+            <p class="placeholder">CfT label, Playwright version, screenshot style hash, and timing metrics will stream into this panel.</p>
+          </article>
+          <article class="tab-panel" data-tab-panel="embeddings" hidden>
+            <h2>Embeddings</h2>
+            <p class="placeholder">sqlite-vec section search UI placeholder.</p>
+          </article>
+          <article class="tab-panel" data-tab-panel="events" hidden>
+            <h2>Event Feed</h2>
+            <ul class="event-feed" id="events-log" hx-sse="swap:log"></ul>
+          </article>
+        </div>
+      </section>
     </div>
+
     <script src="/static/app.js" type="module"></script>
   </body>
 </html>

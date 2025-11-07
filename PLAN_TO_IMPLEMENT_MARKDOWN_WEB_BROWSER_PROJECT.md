@@ -162,6 +162,8 @@ Each state carries timestamps, counters (tiles done/total), errors, CfT version,
 - **Microcopy & cues:** Each card shows whether content came from OCR vs DOM patching (badge: “DOM assist”), tile cards include provenance hover showing `tile_i`, `offset`, `sha256`, and CfT version; manifest tab highlights mismatches (e.g., CfT drift) in amber to prompt re-run.
 - **Link actions:** Table rows have inline buttons for “Open in new job”, “Copy anchor Markdown”, and “Mark as crawled”. When the DOM vs OCR delta exceeds a threshold the row gets a warning icon that links to artifact preview anchored to the tile range.
 
+_2025-11-08 — PurpleDog (bd-rje) is scaffolding the HTMX/Alpine UI + SSE wiring while waiting on capture API metadata from `markdown_web_browser-t82`._
+
 ---
 
 ## 6. Error Handling & Resilience
@@ -451,6 +453,7 @@ Below is a focused, pragmatic list of near-term upgrades. They map to the sectio
 - **Fallback playbook.** When the hosted API throttles or errors persist >5 minutes, surface a UI banner (“OCR degraded”) and queue jobs rather than silently failing. Document switch-over steps (pause new jobs, notify vendor, resume once healthy) in the ops runbook.
 
 ### 19.2 Browser Capture Reliability & Determinism
+> _Status 2025-11-08 — FuchsiaPond (bd: markdown_web_browser-t82) implementing CfT pinning + viewport sweep instrumentation; manifest fields and pyvips overlap metadata underway._
 - **Chrome for Testing binaries.** Switch Playwright to CfT channel, log `cft_version` in `manifest.json`, and expose a health check/test that ensures the pinned version is installed.
 - **CfT label + build.** When Google publishes label tracks (e.g., `Stable`, `Stable-1`, `Stable-2`), record both the label and exact build number for every run. Use labels for day-to-day pinning (easy rollbacks) and fall back to explicit builds when diagnosing regressions; keep both in the manifest and ops dashboards.
 - **Viewport sweep instead of `full_page=True`.** Implement deterministic viewport-sized tiling with overlap stitching to avoid missing elements based on scroll position.
