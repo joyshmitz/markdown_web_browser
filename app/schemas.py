@@ -18,6 +18,7 @@ class JobSnapshotResponse(BaseModel):
     id: str
     state: str
     url: str
+    manifest: "ManifestMetadata | None" = Field(default=None, description="Latest manifest payload if available")
 
 
 class ConcurrencyWindow(BaseModel):

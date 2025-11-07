@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Iterable, Iterator, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 import tarfile
 
@@ -189,7 +189,7 @@ class Store:
             session.add(record)
             session.commit()
 
-    def write_manifest(self, *, job_id: str, manifest: Mapping[str, object]) -> Path:
+    def write_manifest(self, *, job_id: str, manifest: Mapping[str, object] | Any) -> Path:
         with self.session() as session:
             record = session.get(RunRecord, job_id)
             if not record:
@@ -287,20 +287,75 @@ def _create_engine(db_path: Path):
     return engine
 
 
-def _apply_manifest_metadata(record: RunRecord, manifest: Mapping[str, object]) -> None:
-    record.ocr_provider = manifest.get("ocr_provider", record.ocr_provider)  # type: ignore[arg-type]
-    record.ocr_model = manifest.get("model", record.ocr_model)  # type: ignore[arg-type]
-    record.cft_label = manifest.get("cft_label", record.cft_label)  # type: ignore[arg-type]
-    record.cft_version = manifest.get("cft_version", record.cft_version)  # type: ignore[arg-type]
-    record.playwright_version = manifest.get("playwright_version", record.playwright_version)  # type: ignore[arg-type]
-    record.browser_transport = manifest.get("browser_transport", record.browser_transport)  # type: ignore[arg-type]
-    record.screenshot_style_hash = manifest.get("screenshot_style_hash", record.screenshot_style_hash)  # type: ignore[arg-type]
-    record.long_side_px = int(manifest.get("long_side_px", record.long_side_px) or 0) or record.long_side_px
-    record.device_scale_factor = int(manifest.get("device_scale_factor", record.device_scale_factor) or 0) or record.device_scale_factor
-    record.tiles_total = int(manifest.get("tiles_total", record.tiles_total) or 0) or record.tiles_total
-    record.capture_ms = int(manifest.get("capture_ms", record.capture_ms) or 0) or record.capture_ms
-    record.ocr_ms = int(manifest.get("ocr_ms", record.ocr_ms) or 0) or record.ocr_ms
-    record.stitch_ms = int(manifest.get("stitch_ms", record.stitch_ms) or 0) or record.stitch_ms
+def _apply_manifest_metadata(record: RunRecord, manifest: Mapping[str, object] | Any) -> None:
+    manifest_dict = _manifest_to_dict(manifest)
+
+    def _set(attr: str, value: Any) -> None:
+        if value is not None:
+            setattr(record, attr, value)
+
+    def _set_int(attr: str, value: Any) -> None:
+        coerced = _coerce_int(value)
+        if coerced is not None:
+            setattr(record, attr, coerced)
+
+    environment = manifest_dict.get("environment")
+    if isinstance(environment, Mapping):
+        _set("cft_version", environment.get("cft_version"))
+        _set("cft_label", environment.get("cft_label"))
+        _set("playwright_version", environment.get("playwright_version"))
+        _set("browser_transport", environment.get("browser_transport"))
+        _set("screenshot_style_hash", environment.get("screenshot_style_hash"))
+        _set("ocr_model", environment.get("ocr_model"))
+        _set("ocr_provider", environment.get("ocr_provider"))
+        viewport = environment.get("viewport")
+        if isinstance(viewport, Mapping):
+            _set_int("device_scale_factor", viewport.get("device_scale_factor"))
+    else:  # legacy flat manifests
+        _set("cft_version", manifest_dict.get("cft_version"))
+        _set("cft_label", manifest_dict.get("cft_label"))
+        _set("playwright_version", manifest_dict.get("playwright_version"))
+        _set("browser_transport", manifest_dict.get("browser_transport"))
+        _set("screenshot_style_hash", manifest_dict.get("screenshot_style_hash"))
+        _set("ocr_model", manifest_dict.get("model"))
+        _set("ocr_provider", manifest_dict.get("ocr_provider"))
+        _set_int("device_scale_factor", manifest_dict.get("device_scale_factor"))
+
+    timings = manifest_dict.get("timings")
+    if isinstance(timings, Mapping):
+        _set_int("capture_ms", timings.get("capture_ms"))
+        _set_int("ocr_ms", timings.get("ocr_ms"))
+        _set_int("stitch_ms", timings.get("stitch_ms"))
+    else:
+        _set_int("capture_ms", manifest_dict.get("capture_ms"))
+        _set_int("ocr_ms", manifest_dict.get("ocr_ms"))
+        _set_int("stitch_ms", manifest_dict.get("stitch_ms"))
+
+    _set_int("tiles_total", manifest_dict.get("tiles_total"))
+    _set_int("long_side_px", manifest_dict.get("long_side_px"))
+
+
+def _manifest_to_dict(manifest: Mapping[str, object] | Any) -> dict[str, Any]:
+    if isinstance(manifest, Mapping):
+        return dict(manifest)
+    if hasattr(manifest, "model_dump"):
+        return manifest.model_dump()  # type: ignore[no-any-return]
+    if is_dataclass(manifest):
+        return asdict(manifest)
+    return {}
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 __all__ = [

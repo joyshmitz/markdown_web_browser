@@ -7,9 +7,9 @@ import random
 import statistics
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, cast
 
 import httpx
 import typer
@@ -89,19 +89,21 @@ def _config_value(
 def load_settings() -> CLISettings:
     config = _load_decouple()
     return CLISettings(
-        api_base_url=_config_value(config, "API_BASE_URL", default="http://localhost:8000"),
+        api_base_url=cast(str, _config_value(config, "API_BASE_URL", default="http://localhost:8000")),
         mdwb_api_key=_config_value(config, "MDWB_API_KEY"),
-        ocr_server=_config_value(config, "OLMOCR_SERVER", default="https://ai2endpoints.cirrascale.ai/api"),
-        ocr_model=_config_value(config, "OLMOCR_MODEL", default="olmOCR-2-7B-1025-FP8"),
+        ocr_server=cast(
+            str, _config_value(config, "OLMOCR_SERVER", default="https://ai2endpoints.cirrascale.ai/api")
+        ),
+        ocr_model=cast(str, _config_value(config, "OLMOCR_MODEL", default="olmOCR-2-7B-1025-FP8")),
         ocr_api_key=_config_value(config, "OLMOCR_API_KEY"),
         tiles_long_side=int(_config_value(config, "TILE_LONG_SIDE_PX", default="1288")),
         tile_overlap_px=int(_config_value(config, "TILE_OVERLAP_PX", default="120")),
         viewport_overlap_px=int(_config_value(config, "VIEWPORT_OVERLAP_PX", default="120")),
         concurrency_min=int(_config_value(config, "OCR_MIN_CONCURRENCY", default="2")),
         concurrency_max=int(_config_value(config, "OCR_MAX_CONCURRENCY", default="8")),
-        cft_version=_config_value(config, "CFT_VERSION", default="unknown"),
-        cft_label=_config_value(config, "CFT_LABEL", default=""),
-        playwright_channel=_config_value(config, "PLAYWRIGHT_CHANNEL", default="cft"),
+        cft_version=cast(str, _config_value(config, "CFT_VERSION", default="unknown")),
+        cft_label=cast(str, _config_value(config, "CFT_LABEL", default="")),
+        playwright_channel=cast(str, _config_value(config, "PLAYWRIGHT_CHANNEL", default="cft")),
         screenshot_style_hash=_config_value(config, "SCREENSHOT_STYLE_HASH", default=None),
     )
 
@@ -232,7 +234,7 @@ def run_capture(
     }
 
     slug = _slugify(url)
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     job_output = out_dir / f"{timestamp}_{slug}"
 
     with _http_client(settings, http2=http2) as client:

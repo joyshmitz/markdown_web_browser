@@ -36,11 +36,13 @@ print(settings.ocr.server_url)
 | `CAPTURE_VIEWPORT_HEIGHT` | `2000` | Pixel height for captures + manifest `viewport.height`. |
 | `CAPTURE_DEVICE_SCALE_FACTOR` | `2` | DSF used for capture; feeds screenshot style hash + manifest viewport block. |
 | `CAPTURE_COLOR_SCHEME` | `light` | Color scheme forced during capture (manifest `viewport.color_scheme`). |
+| `BLOCKLIST_PATH` | `config/blocklist.json` | JSON selectors injected during capture; recorded via `manifest.blocklist_version`. |
 | `VIEWPORT_OVERLAP_PX` | `120` | Pixels of overlap between viewport sweeps (Plan §19.2). |
-| `CAPTURE_LONG_SIDE_PX` | `1288` | Tile longest side enforced by pyvips tiler + CLI defaults. |
+| `TILE_LONG_SIDE_PX` | `1288` | Tile longest side enforced by pyvips tiler + CLI defaults. |
 | `TILE_OVERLAP_PX` | `120` | Overlap inside the pyvips tiler; must match SSIM stitching heuristics. |
 | `SCROLL_SETTLE_MS` | `350` | Wait time between scrolls so lazy-loaded content settles. |
 | `MAX_VIEWPORT_SWEEPS` | `200` | Guardrail to prevent infinite scroll loops. |
+| `SCROLL_SHRINK_RETRIES` | `2` | Number of times to re-sweep when SPA height shrinks mid-run. Logged in manifest stats. |
 | `SCREENSHOT_MASK_SELECTORS` | *(empty)* | Comma-separated selectors masked during screenshots (cookie banners, tickers). |
 | `SCREENSHOT_STYLE_HASH` | auto-derived if blank | Hash of viewport/mask settings included in manifests & bug reports. |
 | `PROMETHEUS_PORT` | `9000` | Port for the Prometheus metrics endpoint. |
@@ -58,6 +60,7 @@ in `app/schemas.py` (see `ManifestEnvironment`, `ManifestTimings`, and
 
 * CfT version + Playwright channel/version
 * Browser transport (CDP vs BiDi)
+* Viewport + overlap metadata (width/height/DSF, long-side policy, settle timers, mask selectors)
 * Screenshot style hash for the masked/blocked CSS bundle
 * OCR model + FP8 status + concurrency window
 * Timing metrics (`capture_ms`, `ocr_ms`, `stitch_ms`, `total_ms`) once stages

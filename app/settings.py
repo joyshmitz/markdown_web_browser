@@ -16,6 +16,7 @@ __all__ = [
     "OCRSettings",
     "TelemetrySettings",
     "StorageSettings",
+    "WarningSettings",
     "Settings",
     "load_config",
     "get_settings",
@@ -34,12 +35,15 @@ class BrowserSettings:
     viewport_height: int
     device_scale_factor: int
     color_scheme: str
+    long_side_px: int
     viewport_overlap_px: int
     tile_overlap_px: int
     scroll_settle_ms: int
     max_viewport_sweeps: int
+    shrink_retry_limit: int
     screenshot_mask_selectors: tuple[str, ...]
     screenshot_style_hash: str
+    blocklist_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +76,14 @@ class StorageSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class WarningSettings:
+    """Thresholds that control capture warning heuristics."""
+
+    canvas_warning_threshold: int
+    video_warning_threshold: int
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     """Top-level immutable configuration container."""
 
@@ -80,6 +92,7 @@ class Settings:
     ocr: OCRSettings
     telemetry: TelemetrySettings
     storage: StorageSettings
+    warnings: WarningSettings
 
     def manifest_environment(self, *, playwright_version: str | None = None) -> ManifestEnvironment:
         """Return the manifest metadata block used across captures."""
@@ -141,6 +154,7 @@ def _derive_screenshot_hash(
     viewport_height: int,
     device_scale_factor: int,
     color_scheme: str,
+    long_side_px: int,
     viewport_overlap_px: int,
     tile_overlap_px: int,
     screenshot_mask_selectors: tuple[str, ...],
@@ -158,6 +172,7 @@ def _derive_screenshot_hash(
             "device_scale_factor": device_scale_factor,
             "color_scheme": color_scheme,
         },
+        "long_side_px": long_side_px,
         "overlap": {
             "viewport_px": viewport_overlap_px,
             "tile_px": tile_overlap_px,
@@ -182,7 +197,9 @@ def get_settings(env_path: str = ".env") -> Settings:
     tile_overlap_px = _int(cfg, "TILE_OVERLAP_PX", default=120)
     scroll_settle_ms = _int(cfg, "SCROLL_SETTLE_MS", default=350)
     max_viewport_sweeps = _int(cfg, "MAX_VIEWPORT_SWEEPS", default=200)
-    long_side_px = _int(cfg, "TILE_LONG_SIDE_PX", default=1288)
+    long_side_px = _int(cfg, "CAPTURE_LONG_SIDE_PX", default=1288)
+    shrink_retry_limit = _int(cfg, "SCROLL_SHRINK_RETRIES", default=2)
+    blocklist_path = Path(cfg("BLOCKLIST_PATH", default="config/blocklist.json"))
     mask_selectors = _csv_tuple(cfg, "SCREENSHOT_MASK_SELECTORS")
     screenshot_hash = _derive_screenshot_hash(
         explicit=cfg("SCREENSHOT_STYLE_HASH", default=""),
@@ -210,8 +227,10 @@ def get_settings(env_path: str = ".env") -> Settings:
         tile_overlap_px=tile_overlap_px,
         scroll_settle_ms=scroll_settle_ms,
         max_viewport_sweeps=max_viewport_sweeps,
+        shrink_retry_limit=shrink_retry_limit,
         screenshot_mask_selectors=mask_selectors,
         screenshot_style_hash=screenshot_hash,
+        blocklist_path=blocklist_path,
     )
     ocr = OCRSettings(
         server_url=cfg("OLMOCR_SERVER", default="https://ai2endpoints.cirrascale.ai/api"),
@@ -234,6 +253,10 @@ def get_settings(env_path: str = ".env") -> Settings:
         cache_root=Path(cfg("CACHE_ROOT", default=".cache")),
         db_path=Path(cfg("RUNS_DB_PATH", default="runs.db")),
     )
+    warning_settings = WarningSettings(
+        canvas_warning_threshold=_int(cfg, "CANVAS_WARNING_THRESHOLD", default=3),
+        video_warning_threshold=_int(cfg, "VIDEO_WARNING_THRESHOLD", default=2),
+    )
 
     return Settings(
         env_path=env_path,
@@ -241,6 +264,7 @@ def get_settings(env_path: str = ".env") -> Settings:
         ocr=ocr,
         telemetry=telemetry,
         storage=storage,
+        warnings=warning_settings,
     )
 
 

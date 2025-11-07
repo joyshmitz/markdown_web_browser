@@ -1,42 +1,54 @@
-# Overlay/Cookie Banner Mitigation Playbook
-_Last updated: 2025-11_
+# Overlay Blocklist & Overlay Detection Playbook
+_Last updated: 2025-11-08 (UTC)_
 
-We minimize non-content chrome in three layers, ordered by robustness:
+The capture pipeline masks anti-automation overlays in two deterministic layers: network filtering (future) and selector-based CSS hides. This document tracks the selector blocklist contract plus the review workflow.
 
-## 1) Network-level filtering (preferred)
-Use a rule engine to classify and block requests for ads/overlays/trackers, including CMP scripts.
+## Blocklist JSON (`config/blocklist.json`)
 
-- Engine: **python-adblock** (Rust core, EasyList syntax). Load EasyList + EasyPrivacy + cookie/consent filterlists.   
-- Cookie/consent: include **EasyList Cookie List** (successor to “I don’t care about cookies” filters). 
-- Playwright hook: `page.route("**/*", handler)`; consult the adblock engine with URL + type → `continue()` or `abort()`.
+Structure:
 
-**Why this first?** It removes overlay scripts before they run, avoiding flaky selector hunts.
+```jsonc
+{
+  "version": "2025-11-07",
+  "global": ["#onetrust-consent-sdk", "[data-testid='cookie-banner']"],
+  "domains": {
+    "nytimes.com": ["#gateway-content"],
+    "*.substack.com": ["div[class*='paywall']"]
+  }
+}
+```
 
-## 2) CSS-level hides (deterministic, site-agnostic)
-Inject a scoped stylesheet _after_ navigation completes (and before sweeps) to hide common overlays and sticky elements:
+* `global`: selectors applied to every capture.
+* `domains`: per-host or wildcard overrides (`*.example.com`). Selectors are appended to the global list in declaration order.
+* `version`: free-form string logged in manifests for forensic triage.
 
-```css
-[aria-modal="true"], [role="dialog"][aria-label*="consent" i], .cookie, .consent, .gdpr, .cmp, .overlay,
-[style*="z-index"][role="dialog"], [data-testid*="cookie" i],
-header[style*="position:fixed"], [style*="position:sticky"]
-{ display: none !important }
-````
+**Environment variable:** `BLOCKLIST_PATH` overrides the default (`config/blocklist.json`). Document the location in `.env.example` and `docs/config.md` whenever it changes.
 
-* Keep a **versioned** blocklist with allowlist exceptions per domain in `docs/blocklist.json`, referenced by manifest.
+## Runtime Behavior
 
-## 3) DOM heuristics (surgical)
+1. `app.blocklist.cached_blocklist()` loads the JSON once per process.
+2. `app.capture` calls `apply_blocklist(page, url=..., config=...)` after navigation, which:
+   - Injects CSS via `page.add_style_tag` to hide selectors.
+   - Returns per-selector hit counts by running `document.querySelectorAll()`.
+3. Capture manifests record `blocklist_hits` + warnings when selectors matched (surfaced in UI/ops dashboards).
+4. Blocklist hits also emit SSE warnings (`event:warning`) so the UI can highlight when overlays were removed.
 
-As a last resort, auto-detect off-screen/sticky chrome and hide:
+## Editing Workflow
 
-* Candidates: elements with `position: fixed|sticky`, large `z-index`, or size >25% of viewport height.
-* Defer until after first sweep to avoid breaking layout; record each hidden selector in `manifest.hidden[]` for reproducibility.
+1. Update `config/blocklist.json` (preserve alphabetical sort by domain).
+2. Run `uv run ruff check --fix --unsafe-fixes` + `uvx ty check`.
+3. Document the change in this file (date + rationale) and note it in the relevant PLAN section.
+4. Mention the update in the daily Agent Mail thread so Ops knows to refresh caches.
 
-## QA & Safety
+## Selector Guidelines
 
-* Never click “reject/accept” on CMPs automatically (legal ambiguity, anti-automation traps).
-* If hides change layout significantly (detected via `scrollHeight` shrink), redo sweep with longer settle per `manifest.capture.retries`.
+- Target the smallest stable wrapper (IDs or data attributes). Avoid brittle class chains unless no better hook exists.
+- Never trigger user-visible actions (no `click()`); we only hide via CSS.
+- For paywalls that gate scroll height, prefer selectors that cover the overlay/backdrop combo.
+- When in doubt, capture before/after tiles and attach in `docs/blocklist/` for review.
 
-## References
+## Future Work
 
-* Adblock engine (Python bindings).
-* EasyList Cookie List.
+- Layer network-level filtering (python-adblock) ahead of CSS injection for domains with hostile CMP scripts.
+- Extend heuristics to auto-hide `position:fixed` elements taller than 25% viewport and record them in manifests for review.
+- Expose a CLI (`mdwb blocklist add <domain> <selector>`) once Admin UI lands, writing through to the JSON + docs.

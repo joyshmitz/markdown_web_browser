@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""Nightly smoke runner + weekly latency aggregation."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any
+
+from scripts import olmocr_cli
+
+PRODUCTION_SET_PATH = Path("benchmarks/production_set.json")
+PRODUCTION_ROOT = Path("benchmarks/production")
+WEEKLY_SUMMARY_PATH = PRODUCTION_ROOT / "weekly_summary.json"
+
+
+def _load_production_set() -> dict[str, Any]:
+    if not PRODUCTION_SET_PATH.exists():
+        raise FileNotFoundError(
+            "benchmarks/production_set.json missing; see PLAN §22 for requirements"
+        )
+    return json.loads(PRODUCTION_SET_PATH.read_text(encoding="utf-8"))
+
+
+@dataclass
+class Category:
+    name: str
+    budget_ms: int
+    urls: list[dict[str, str]]
+
+
+def _parse_categories(raw: dict[str, Any]) -> list[Category]:
+    categories: list[Category] = []
+    for entry in raw.get("categories", []):
+        categories.append(
+            Category(
+                name=entry["name"],
+                budget_ms=int(entry.get("p95_budget_ms", 0)),
+                urls=list(entry.get("urls", [])),
+            )
+        )
+    if not categories:
+        raise ValueError("production_set.json has no categories")
+    return categories
+
+
+@dataclass
+class RunRecord:
+    category: str
+    budget_ms: int
+    slug: str
+    url: str
+    job_id: str
+    run_dir: Path
+    manifest_path: Path
+    capture_ms: int | None
+    total_ms: int | None
+    timings: dict[str, Any] | None
+
+
+def _ensure_date_dir(date_str: str) -> Path:
+    target = PRODUCTION_ROOT / date_str
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _percentile(values: list[float], pct: float) -> float | None:
+    if not values:
+        return None
+    sequence = sorted(values)
+    k = (len(sequence) - 1) * pct
+    f = int(k)
+    c = min(f + 1, len(sequence) - 1)
+    if f == c:
+        return sequence[f]
+    return sequence[f] * (c - k) + sequence[c] * (k - f)
+
+
+def _slug_from_url(url_entry: dict[str, str]) -> str:
+    slug = url_entry.get("slug")
+    if slug:
+        return slug
+    url = url_entry.get("url", "")
+    sanitized = re.sub(r"[^a-zA-Z0-9]+", "-", url).strip("-")
+    return sanitized or "job"
+
+
+def _manifest_metrics(manifest_path: Path) -> tuple[int | None, int | None, dict[str, Any] | None]:
+    if not manifest_path.exists():
+        return None, None, None
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    timings = manifest.get("timings") or {}
+    capture_ms = timings.get("capture_ms")
+    total_ms = timings.get("total_ms") or sum(
+        part for key in ("capture_ms", "ocr_ms", "stitch_ms") if (part := timings.get(key))
+    )
+    return capture_ms, total_ms, timings
+
+
+def run_category(
+    category: Category,
+    out_dir: Path,
+    settings: olmocr_cli.CLISettings,
+    http2: bool,
+    poll_interval: float,
+    timeout_s: float,
+) -> list[RunRecord]:
+    results: list[RunRecord] = []
+    category_dir = out_dir / category.name
+    category_dir.mkdir(parents=True, exist_ok=True)
+    for url_entry in category.urls:
+        slug = _slug_from_url(url_entry)
+        url = url_entry["url"]
+        print(f"[smoke] {category.name} → {url}")
+        result = olmocr_cli.run_capture(
+            url=url,
+            settings=settings,
+            out_dir=category_dir,
+            tiles_long_side=None,
+            overlap_px=None,
+            concurrency=None,
+            http2=http2,
+            poll_interval=poll_interval,
+            timeout_s=timeout_s,
+        )
+        manifest_path = result.output_dir / "manifest.json"
+        capture_ms, total_ms, timings = _manifest_metrics(manifest_path)
+        results.append(
+            RunRecord(
+                category=category.name,
+                budget_ms=category.budget_ms,
+                slug=slug,
+                url=url,
+                job_id=result.job_id,
+                run_dir=result.output_dir,
+                manifest_path=manifest_path,
+                capture_ms=capture_ms,
+                total_ms=total_ms,
+                timings=timings,
+            )
+        )
+    return results
+
+
+def write_manifest_index(date_dir: Path, records: list[RunRecord]) -> Path:
+    payload = [
+        {
+            "category": record.category,
+            "budget_ms": record.budget_ms,
+            "slug": record.slug,
+            "url": record.url,
+            "job_id": record.job_id,
+            "run_dir": str(record.run_dir),
+            "manifest": str(record.manifest_path),
+            "capture_ms": record.capture_ms,
+            "total_ms": record.total_ms,
+            "timings": record.timings,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        for record in records
+    ]
+    index_path = date_dir / "manifest_index.json"
+    index_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return index_path
+
+
+def _collect_history(days: int) -> list[Path]:
+    if not PRODUCTION_ROOT.exists():
+        return []
+    cut_off = datetime.utcnow().date() - timedelta(days=days - 1)
+    history_dirs: list[Path] = []
+    for child in sorted(PRODUCTION_ROOT.iterdir()):
+        if not child.is_dir():
+            continue
+        try:
+            child_date = datetime.strptime(child.name, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if child_date >= cut_off:
+            history_dirs.append(child)
+    return history_dirs
+
+
+def update_weekly_summary(config: dict[str, Any], window_days: int = 7) -> None:
+    history_dirs = _collect_history(window_days)
+    metrics: dict[str, list[dict[str, Any]]] = {}
+    for history_dir in history_dirs:
+        index_path = history_dir / "manifest_index.json"
+        if not index_path.exists():
+            continue
+        entries: list[dict[str, Any]] = json.loads(index_path.read_text(encoding="utf-8"))
+        for entry in entries:
+            metrics.setdefault(entry["category"], []).append(entry)
+
+    summary = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "window_days": window_days,
+        "categories": [],
+    }
+    budgets = {cat["name"]: cat.get("p95_budget_ms") for cat in config.get("categories", [])}
+
+    for category, entries in sorted(metrics.items()):
+        capture_values = [entry["capture_ms"] for entry in entries if entry.get("capture_ms") is not None]
+        total_values = [entry["total_ms"] for entry in entries if entry.get("total_ms") is not None]
+        budget = budgets.get(category)
+        summary["categories"].append(
+            {
+                "name": category,
+                "runs": len(entries),
+                "budget_ms": budget,
+                "capture_ms": {
+                    "p50": _percentile(capture_values, 0.5),
+                    "p95": _percentile(capture_values, 0.95),
+                },
+                "total_ms": {
+                    "p50": _percentile(total_values, 0.5),
+                    "p95": _percentile(total_values, 0.95),
+                },
+            }
+        )
+
+    WEEKLY_SUMMARY_PATH.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run nightly smoke captures per PLAN §22")
+    parser.add_argument("--date", help="Override run date (YYYY-MM-DD)")
+    parser.add_argument("--http2", action=argparse.BooleanOptionalAction, default=True, help="Toggle HTTP/2")
+    parser.add_argument("--poll-interval", type=float, default=1.0)
+    parser.add_argument("--timeout", type=float, default=900.0)
+    args = parser.parse_args()
+
+    run_date = args.date or datetime.utcnow().date().isoformat()
+    config = _load_production_set()
+    categories = _parse_categories(config)
+    settings = olmocr_cli.load_settings()
+    date_dir = _ensure_date_dir(run_date)
+
+    all_records: list[RunRecord] = []
+    for category in categories:
+        records = run_category(
+            category,
+            date_dir,
+            settings=settings,
+            http2=args.http2,
+            poll_interval=args.poll_interval,
+            timeout_s=args.timeout,
+        )
+        all_records.extend(records)
+
+    write_manifest_index(date_dir, all_records)
+    update_weekly_summary(config)
+    print(f"Smoke run complete for {run_date}; artifacts under {date_dir}")
+
+
+if __name__ == "__main__":
+    main()

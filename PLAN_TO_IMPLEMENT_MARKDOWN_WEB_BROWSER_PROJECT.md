@@ -174,6 +174,10 @@ _2025-11-08 — UI shell can now target arbitrary `/jobs/{id}/stream` endpoints 
 
 _2025-11-08 — Hardened bd-rje scaffolding: FastAPI now serves `/` + `/static` via absolute paths, artifact list rendering avoids `innerHTML`, and the Run button clearly states that job submission is still stubbed._
 
+_2025-11-08 — `app/dom_links.py` now defines LinkRecord merge/serialization helpers; demo SSE + `/jobs/demo/links.json` pull from this shared logic so backend/UI stay in sync for Link delta contracts._
+
+_2025-11-08 — Added BeautifulSoup-powered DOM snapshot parsing so `extract_links_from_dom()` can return real anchors/forms once capture snapshots land._
+
 ---
 
 ## 6. Error Handling & Resilience
@@ -181,6 +185,7 @@ _2025-11-08 — Hardened bd-rje scaffolding: FastAPI now serves `/` + `/static` 
 - Network idle that never resolves → fallback to `domcontentloaded` plus extra wait; record detour in manifest.
 - Canvas/WebGL-first content → emit warning banner + attach raw tile thumbnail next to Markdown block.
 - Anti-automation overlays → blocklist injection + UI toggle for per-domain overrides.
+  _2025-11-08 — BrownStone (bd-dm9) introduced JSON-backed selector blocklist + capture warnings; manifests now log `blocklist_hits` + warning codes for SSE/UI surfacing._
 - Server overload → adaptive OCR concurrency, queue visibility, remote/local failover.
 - Partial results → stream partial Markdown as tiles finish; mark sections as incomplete with provenance comments.
 - Full-page retries → viewport sweep restarts when shrink detected; record both sweeps.
@@ -468,7 +473,7 @@ Below is a focused, pragmatic list of near-term upgrades. They map to the sectio
 - **Fallback playbook.** When the hosted API throttles or errors persist >5 minutes, surface a UI banner (“OCR degraded”) and queue jobs rather than silently failing. Document switch-over steps (pause new jobs, notify vendor, resume once healthy) in the ops runbook.
 
 ### 19.2 Browser Capture Reliability & Determinism
-> _Status 2025-11-08 — FuchsiaPond (bd: markdown_web_browser-t82) implementing CfT pinning + viewport sweep instrumentation; manifest fields and pyvips overlap metadata underway._
+> _Status 2025-11-08 — FuchsiaPond (bd: markdown_web_browser-t82) wired CfT pinning + viewport sweep instrumentation, including SPA shrink detection with configurable retry limits recorded in manifests._
 - **Chrome for Testing binaries.** Switch Playwright to CfT channel, log `cft_version` in `manifest.json`, and expose a health check/test that ensures the pinned version is installed.
 - **CfT label + build.** When Google publishes label tracks (e.g., `Stable`, `Stable-1`, `Stable-2`), record both the label and exact build number for every run. Use labels for day-to-day pinning (easy rollbacks) and fall back to explicit builds when diagnosing regressions; keep both in the manifest and ops dashboards.
 - **Viewport sweep instead of `full_page=True`.** Implement deterministic viewport-sized tiling with overlap stitching to avoid missing elements based on scroll position.
@@ -477,7 +482,7 @@ Below is a focused, pragmatic list of near-term upgrades. They map to the sectio
 - **Scroll policy revamp.** Use scrollHeight + network-idle stabilization with IntersectionObserver sentinels; retry if SPA shrinks height mid-run.
 
 ### 19.3 Tiling, Image IO, and Compression
-> _Status 2025-11-08 — FuchsiaPond (bd: markdown_web_browser-t82) implemented pyvips-based tiler enforcing 1288 px longest side + 120 px overlap, with SHA256 provenance per tile._
+> _Status 2025-11-08 — FuchsiaPond (bd: markdown_web_browser-t82) implemented pyvips-based tiler enforcing 1288 px longest side + 120 px overlap, plus top/bottom overlap hashes for future SSIM seam trimming._
 - Enforce 1288 px longest side (downscale if necessary) and track original DPI/scale.
 - Migrate heavy operations to pyvips, retaining Pillow only for niche formats.
 - Tune PNG encode (Q=9, palette off) and optionally run background `oxipng` to trim caches.
@@ -510,8 +515,9 @@ Below is a focused, pragmatic list of near-term upgrades. They map to the sectio
 
 ### 19.9 Robustness & Anti-Flakiness
 - Maintain versioned CSS/selector blocklists (JSON) with per-domain overrides; inject via screenshot style or `page.addStyleTag`.
-- Detect canvas/video-heavy tiles and show warnings plus raw tile thumbnails near Markdown blocks.
-- Retry viewport sweeps when shrinkage detected; record both sweeps in manifest.
+  - Detect canvas/video-heavy tiles and show warnings plus raw tile thumbnails near Markdown blocks.
+  - Retry viewport sweeps when shrinkage detected; record both sweeps in manifest.
+  _2025-11-08 — BrownStone (bd-dm9) wired `config/blocklist.json` + `app.blocklist` loader into capture. Manifest now records blocklist version, per-selector hit counts, and warning codes (`canvas_heavy`, `video_overlay`, `sticky_chrome`)._
 
 ### 19.10 Test Plan Additions
 
@@ -537,6 +543,8 @@ _2025-11-08 — PinkCreek (bd-ug0) threading the new guards into automated runne
 - HTMX SSE + `/events` keep the frontend tiny and agents happy.
 
 ### 19.14 Hosted olmOCR CLI integration
+
+_2025-11-08 — PinkCreek (bd-ug0) replaced the placeholder with the Typer/Rich CLI plus API_BASE_URL/MDWB_API_KEY plumbing; next up is wiring nightly smoke + weekly latency harnesses._
 - **Scripts + docs.** Copy `scripts/olmocr_cli.py` and `docs/olmocr_cli.md` from `/data/projects/olmocr/` (the Typer CLI + documentation) into this repo. Treat them as the blessed way to run batch jobs or debug hosted OCR latency outside the web UI.
 - **Config surface.** Keep the CLI defaulting to the hosted API URL; expose knobs for `--server-url`, `--workers`, and `--tensor-parallel-size` but document that TP>1 is only relevant if we later reintroduce local inference.
 - **Ops usage.** Point on-call guides to `olmocr_cli.py run --workspace …` for reproducing customer issues quickly, since it already filters noisy logs and streams ETA.
@@ -667,6 +675,7 @@ Use these snippets as scaffolding for docs, onboarding, and regression verificat
 ## 22. Production Smoke Set & Latency Tracking
 
 _2025-11-08 — PinkCreek (bd-ug0) spinning up nightly smoke + weekly latency automation and wiring manifests/log storage per this section._
+- `scripts/run_smoke.py` orchestrates nightly captures per `benchmarks/production_set.json` (writing `manifest_index.json` under `benchmarks/production/<date>/` and refreshing `weekly_summary.json`).
 
 Focus on a curated set of real customer-style URLs instead of synthetic benchmarks. Maintain `benchmarks/production_set.json` listing each URL, category, and target latency.
 

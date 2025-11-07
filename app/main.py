@@ -10,6 +10,12 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from app.dom_links import (
+    blend_dom_with_ocr,
+    demo_dom_links,
+    demo_ocr_links,
+    serialize_links,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 WEB_ROOT = BASE_DIR / "web"
@@ -68,20 +74,12 @@ async def demo_job_stream(request: Request) -> StreamingResponse:
             (
                 "links",
                 json.dumps(
-                    [
-                        {
-                            "text": "Example Docs",
-                            "href": "https://example.com/docs",
-                            "source": "DOM",
-                            "delta": "✓",
-                        },
-                        {
-                            "text": "Unknown link",
-                            "href": "https://demo.invalid",
-                            "source": "OCR-only",
-                            "delta": "Δ +1",
-                        },
-                    ]
+                    serialize_links(
+                        blend_dom_with_ocr(
+                            dom_links=demo_dom_links(),
+                            ocr_links=demo_ocr_links(),
+                        )
+                    )
                 ),
             ),
             (
@@ -130,17 +128,5 @@ async def demo_job_stream(request: Request) -> StreamingResponse:
 async def demo_links() -> list[dict[str, str]]:
     """Return sample links JSON to unblock UI + agents while backend matures."""
 
-    return [
-        {
-            "text": "Example Docs",
-            "href": "https://example.com/docs",
-            "source": "DOM",
-            "delta": "✓",
-        },
-        {
-            "text": "Support",
-            "href": "https://example.com/support",
-            "source": "DOM+OCR",
-            "delta": "Δ +1",
-        },
-    ]
+    blended = blend_dom_with_ocr(dom_links=demo_dom_links(), ocr_links=demo_ocr_links())
+    return serialize_links(blended)

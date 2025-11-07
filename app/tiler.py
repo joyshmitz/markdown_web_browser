@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import pyvips
 
@@ -29,6 +29,8 @@ class TileSlice:
     source_y_offset: int
     viewport_y_offset: int
     overlap_px: int
+    top_overlap_sha256: Optional[str]
+    bottom_overlap_sha256: Optional[str]
 
 
 async def slice_into_tiles(
@@ -75,8 +77,12 @@ def _slice_sync(
     height = image.height
     width = image.width
 
+    overlap_px = min(overlap_px, target_long_side_px)
+
     if height <= target_long_side_px:
         png_bytes = image.write_to_buffer(".png", **_PNG_ENCODE_ARGS)
+        top_sha = _overlap_sha(image, position="top", overlap_px=overlap_px)
+        bottom_sha = _overlap_sha(image, position="bottom", overlap_px=overlap_px)
         tiles.append(
             TileSlice(
                 index=tile_index_offset,
@@ -88,6 +94,8 @@ def _slice_sync(
                 source_y_offset=int(viewport_y_offset),
                 viewport_y_offset=viewport_y_offset,
                 overlap_px=overlap_px,
+                top_overlap_sha256=top_sha,
+                bottom_overlap_sha256=bottom_sha,
             )
         )
         return tiles
@@ -107,6 +115,8 @@ def _slice_sync(
 
         cropped = image.crop(0, cursor, width, tile_height)
         png_bytes = cropped.write_to_buffer(".png", **_PNG_ENCODE_ARGS)
+        top_sha = _overlap_sha(cropped, position="top", overlap_px=overlap_px)
+        bottom_sha = _overlap_sha(cropped, position="bottom", overlap_px=overlap_px)
         tiles.append(
             TileSlice(
                 index=tile_index_offset + tile_idx,
@@ -118,6 +128,8 @@ def _slice_sync(
                 source_y_offset=int(viewport_y_offset + _unscale(cursor, scale)),
                 viewport_y_offset=viewport_y_offset,
                 overlap_px=overlap_px,
+                top_overlap_sha256=top_sha,
+                bottom_overlap_sha256=bottom_sha,
             )
         )
 
@@ -134,3 +146,21 @@ def _unscale(value: int, scale: float) -> float:
     if scale == 0:
         return float(value)
     return value / scale
+
+
+def _overlap_sha(image: pyvips.Image, *, position: str, overlap_px: int) -> Optional[str]:
+    if overlap_px <= 0:
+        return None
+
+    sample_height = min(overlap_px, image.height)
+    if sample_height <= 0:
+        return None
+
+    if position == "top":
+        strip = image.crop(0, 0, image.width, sample_height)
+    else:
+        y = max(0, image.height - sample_height)
+        strip = image.crop(0, y, image.width, sample_height)
+
+    png_bytes = strip.write_to_buffer(".png", **_PNG_ENCODE_ARGS)
+    return hashlib.sha256(png_bytes).hexdigest()

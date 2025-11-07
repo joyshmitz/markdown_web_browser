@@ -53,8 +53,9 @@ def build_initial_snapshot(
     manifest = None
     active_settings = settings or global_settings
     if active_settings:
-        environment = active_settings.manifest_environment(playwright_version=PLAYWRIGHT_VERSION)
-        manifest = ManifestMetadata(environment=environment)
+        manifest = ManifestMetadata(
+            environment=active_settings.manifest_environment(playwright_version=PLAYWRIGHT_VERSION),
+        )
 
     snapshot = JobSnapshot(
         id=job_id,

@@ -1,0 +1,25 @@
+{
+  "version": "2025-11-07",
+  "global": [
+    "#onetrust-consent-sdk",
+    "[data-testid='cookie-banner']",
+    "[aria-label*='cookie']",
+    "[role='dialog'][aria-live='polite']",
+    "[class*='sticky-ad']",
+    "div[class*='newsletter'][class*='overlay']"
+  ],
+  "domains": {
+    "nytimes.com": [
+      "#gateway-content",
+      "div[aria-label='subscribe dialog']"
+    ],
+    "*.bloomberg.com": [
+      ".paywall",
+      "#toggle-reader-view"
+    ],
+    "*.substack.com": [
+      "div[class*='paywall']",
+      "div[class*='upsell']"
+    ]
+  }
+}

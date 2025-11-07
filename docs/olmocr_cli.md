@@ -7,25 +7,35 @@ This CLI standardizes remote/local OCR runs for smoke, latency spot-checks, and 
 - Ensures every run logs **model policy**, **tile geometry**, **concurrency**, and **CfT/Playwright versions** the same way as the web app.
 - Makes “re-run with different OCR policy” trivial without touching the server.
 
+## Configuration
+
+Set these variables in `.env` (mirrors `docs/config.md`):
+
+| Variable | Purpose |
+| --- | --- |
+| `API_BASE_URL` | FastAPI instance receiving `/jobs` requests (default `http://localhost:8000`). |
+| `MDWB_API_KEY` | Optional bearer token for the Markdown Web Browser API. |
+| `OLMOCR_SERVER` / `OLMOCR_API_KEY` / `OLMOCR_MODEL` | Remote olmOCR defaults used in every `run`/`bench` invocation. |
+| `TILE_LONG_SIDE_PX` / `TILE_OVERLAP_PX` / `VIEWPORT_OVERLAP_PX` | Capture geometry echoed into manifests. |
+
+Run `uv run scripts/olmocr_cli.py show-env` to confirm config before kicking off captures.
+
 ## Commands
 
 ### 1) Inspect environment
-````
-
+```
 uv run scripts/olmocr_cli.py show-env
-
 ```
 - Prints OCR server, HTTP/2 enabled, model policy, token-bucket settings, CfT/Playwright versions.
 
 ### 2) Run OCR for one URL
 ```
 
-uv run scripts/olmocr_cli.py run 
---url [https://example.com/article](https://example.com/article) 
---tiles-long-side 1288 --overlap 120 
---concurrency 6 --http2 true 
---ocr.server $OLMOCR_SERVER --ocr.key $OLMOCR_API_KEY --ocr.model olmOCR-2-7B-1025-FP8 
---out-dir benchmarks/runs/$(date +%Y%m%d_%H%M%S)
+uv run scripts/olmocr_cli.py run \\
+  --url https://example.com/article \\
+  --out-dir benchmarks/runs \\
+  --tiles-long-side 1288 --overlap 120 \\
+  --concurrency 6 --http2
 
 ```
 - Uses viewport sweep; encodes tiles via **pyvips**; posts with HTTP/2. 
@@ -33,12 +43,12 @@ uv run scripts/olmocr_cli.py run
 ### 3) Latency micro-bench
 ```
 
-uv run scripts/olmocr_cli.py bench 
---url-file benchmarks/urls/medium.txt 
---repeats 3 --shuffle 
---report benchmarks/weekly_summary.json
+uv run scripts/olmocr_cli.py bench \\
+  --url-file benchmarks/urls/medium.txt \\
+  --repeats 3 --shuffle
 
 ```
+- Stores every run under `benchmarks/bench/` (subdirectories include timestamp + URL slug) and prints p50/p90/p95.
 
 ## Exit Codes
 - `0` success, `10` partial (some tiles terminal-failed), `20` upstream unavailable.
@@ -52,8 +62,6 @@ uv run scripts/olmocr_cli.py bench
 ## Repro Bundles
 - Each run writes: `artifact/tiles/*.png`, `out.md`, `links.json`, `manifest.json`.
 - Always attach the bundle in bug reports; **never delete** artifacts without explicit written approval.
-```
-
 ---
 
 ## `docs/models.yaml` (template)
