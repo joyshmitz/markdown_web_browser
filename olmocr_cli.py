@@ -14,7 +14,7 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, cast
+from typing import List, Optional, Tuple, cast
 
 import zstandard
 
@@ -745,11 +745,14 @@ def _run_with_filtered_output(cmd: List[str], env: dict, total_items: Optional[i
         text=True,
         bufsize=1,
     )
+    stdout = process.stdout
+    if stdout is None:  # pragma: no cover - defensive guard
+        raise RuntimeError("stdout pipe was not created")
     start_time = time.time()
     suppressed_attempts = 0
     last_processed = -1
     while True:
-        line = process.stdout.readline()
+        line = stdout.readline()
         if not line:
             break
         stripped = line.rstrip()

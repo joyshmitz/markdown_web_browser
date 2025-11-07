@@ -466,6 +466,131 @@ function initEmbeddingsPanel(streamRoot) {
   return { setJobId };
 }
 
+function initEventsPanel(root) {
+  const logEl = root.querySelector('[data-events-log]');
+  if (!logEl) {
+    return null;
+  }
+  const statusEl = root.querySelector('[data-events-status]');
+  let abortController = null;
+  let activeJobId = root.dataset.jobId || 'demo';
+  let cursor = null;
+
+  const setStatus = (text, variant = 'info') => {
+    if (!statusEl) {
+      return;
+    }
+    statusEl.textContent = text;
+    statusEl.dataset.variant = variant;
+  };
+
+  const resetLog = () => {
+    logEl.innerHTML = '';
+  };
+
+  const appendEntry = (entry) => {
+    const item = document.createElement('li');
+    const meta = document.createElement('div');
+    meta.className = 'event-feed__meta';
+    meta.textContent = `${formatEventTimestamp(entry.timestamp)} · #${entry.sequence ?? '—'}`;
+    const summary = document.createElement('div');
+    summary.className = 'event-feed__summary';
+    const snapshot = entry.snapshot || {};
+    const state = snapshot.state || '—';
+    const progress = snapshot.progress || {};
+    const done = progress.done ?? 0;
+    const total = progress.total ?? 0;
+    let details = state;
+    if (Number.isFinite(done) && Number.isFinite(total) && (done || total)) {
+      details += ` · ${done}/${total} tiles`;
+    }
+    if (snapshot.error) {
+      details += ` · ${snapshot.error}`;
+    }
+    summary.textContent = details;
+    item.append(meta, summary);
+    logEl.prepend(item);
+    while (logEl.children.length > MAX_EVENT_ROWS) {
+      logEl.removeChild(logEl.lastChild);
+    }
+  };
+
+  const poll = async () => {
+    while (abortController && !abortController.signal.aborted) {
+      try {
+        const params = new URLSearchParams();
+        if (cursor) {
+          params.set('since', cursor);
+        }
+        const template = root.dataset.eventsTemplate || '/jobs/{job_id}/events';
+        const response = await fetch(buildTemplateUrl(template, activeJobId, params), {
+          signal: abortController.signal,
+        });
+        if (response.status === 404) {
+          setStatus('Events feed not available yet.', 'warning');
+        } else if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        } else {
+          const text = await response.text();
+          let appended = 0;
+          text.split('\n').forEach((line) => {
+            const payload = line.trim();
+            if (!payload) {
+              return;
+            }
+            try {
+              const entry = JSON.parse(payload);
+              appendEntry(entry);
+              cursor = entry.timestamp || cursor;
+              appended += 1;
+            } catch (error) {
+              console.error('Failed to parse events payload', error);
+            }
+          });
+          if (cursor && appended === 0) {
+            setStatus(`No new events for ${activeJobId}.`, 'pending');
+          } else if (appended > 0) {
+            setStatus(`Received ${appended} event${appended === 1 ? '' : 's'}.`, 'success');
+          } else {
+            setStatus('No events yet for this job.', 'pending');
+          }
+        }
+      } catch (error) {
+        if (abortController?.signal.aborted) {
+          return;
+        }
+        console.error('Events feed failed', error);
+        setStatus(error.message || 'Events feed error', 'error');
+      }
+      await sleep(EVENTS_POLL_INTERVAL_MS);
+    }
+  };
+
+  const connect = (jobId) => {
+    activeJobId = jobId || 'demo';
+    cursor = null;
+    resetLog();
+    stop();
+    abortController = new AbortController();
+    setStatus(`Streaming events for ${activeJobId}…`, 'pending');
+    poll().catch((error) => {
+      if (!abortController?.signal.aborted) {
+        console.error('Events poll crashed', error);
+        setStatus(error.message || 'Events feed error', 'error');
+      }
+    });
+  };
+
+  const stop = () => {
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+  };
+
+  return { connect, stop };
+}
+
 function initStreamControls(sse) {
   const runButton = document.getElementById('run-job');
   const urlInput = document.getElementById('job-url');
@@ -538,22 +663,35 @@ function initStreamControls(sse) {
 
   runButton.addEventListener('click', submitJob);
 
-  const refreshButton = document.querySelector('[data-links-refresh]'); 
+  const refreshButton = document.querySelector('[data-links-refresh]');
   if (refreshButton) {
-    refreshButton.addEventListener('click', async () => {
+    const manualRefresh = async () => {
       const template = root.dataset.linksTemplate || '/jobs/{job_id}/links.json';
       const jobId = root.dataset.jobId || jobInput.value.trim() || 'demo';
-      const url = template.replace('{job_id}', jobId);
+      const url = buildTemplateUrl(template, jobId);
       try {
-        const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        renderLinks(root.querySelector('[data-sse-field=\"links\"]'), JSON.stringify(data));
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        const target = root.querySelector('[data-sse-field=\"links\"]');
+        renderLinks(target, JSON.stringify(data));
       } catch (error) {
         console.error('Failed to refresh links', error);
       }
+    };
+
+    refreshButton.addEventListener('click', () => {
+      const jobId = root.dataset.jobId || jobInput.value.trim() || 'demo';
+      if (sse?.refreshLinks) {
+        sse.refreshLinks(jobId);
+        return;
+      }
+      manualRefresh();
     });
   }
+
 }
 
 function init() {
@@ -563,3 +701,29 @@ function init() {
 }
 
 init();
+
+function buildTemplateUrl(template, jobId, params) {
+  const target = template.replace('{job_id}', encodeURIComponent(jobId || 'demo'));
+  if (!params || !params.toString()) {
+    return target;
+  }
+  const separator = target.includes('?') ? '&' : '?';
+  return `${target}${separator}${params.toString()}`;
+}
+
+function formatEventTimestamp(value) {
+  if (!value) {
+    return '—';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
