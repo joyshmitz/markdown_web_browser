@@ -7,14 +7,27 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from enum import Enum
 from importlib import metadata
-from typing import Awaitable, Callable, Dict, List, TypedDict
+from typing import Any, Awaitable, Callable, Dict, List, TypedDict
 from uuid import uuid4
 
+import hashlib
+import hmac
+import json
+import logging
+
+import httpx
+
 from app.capture import CaptureConfig, CaptureResult, capture_tiles
+from app.dom_links import extract_links_from_dom, serialize_links
 from app.schemas import JobCreateRequest, ManifestMetadata
 from app.settings import Settings, settings as global_settings
 from app.store import Store, build_store
 from app.warning_log import append_warning_log
+
+LOGGER = logging.getLogger(__name__)
+
+WebhookSender = Callable[[str, dict[str, Any]], Awaitable[None]]
+_EVENT_HISTORY_LIMIT = 500
 
 try:  # Playwright may be missing in some CI environments
     PLAYWRIGHT_VERSION = metadata.version("playwright")
@@ -122,7 +135,7 @@ class JobManager:
         if job_id not in self._snapshots:
             raise KeyError(f"Job {job_id} not found")
         queue: asyncio.Queue[JobSnapshot] = asyncio.Queue()
-        queue.put_nowait(self._snapshots[job_id].copy())
+        queue.put_nowait(self._snapshot_payload(job_id))
         self._subscribers.setdefault(job_id, []).append(queue)
         return queue
 
@@ -280,6 +293,17 @@ async def execute_capture_job(
         capture_result = await capture_tiles(capture_config)
         append_warning_log(job_id=job_id, url=url, manifest=capture_result.manifest)
         storage.write_manifest(job_id=job_id, manifest=capture_result.manifest)
+        dom_snapshot = getattr(capture_result, "dom_snapshot", None)
+        dom_path = None
+        if dom_snapshot:
+            dom_path = storage.write_dom_snapshot(job_id=job_id, html=dom_snapshot)
+        write_links = getattr(storage, "write_links", None)
+        if dom_path and callable(write_links):
+            try:
+                dom_links = extract_links_from_dom(dom_path)
+                write_links(job_id=job_id, links=serialize_links(dom_links))
+            except Exception as exc:  # pragma: no cover - log and continue
+                LOGGER.warning("Failed to extract DOM links for %s: %s", job_id, exc)
         tile_artifacts = storage.write_tiles(job_id=job_id, tiles=capture_result.tiles)
     except Exception:
         storage.update_status(job_id=job_id, status=JobState.FAILED, finished_at=datetime.now(timezone.utc))
@@ -287,3 +311,34 @@ async def execute_capture_job(
 
     storage.update_status(job_id=job_id, status=JobState.DONE, finished_at=datetime.now(timezone.utc))
     return capture_result, tile_artifacts
+
+
+async def _default_webhook_sender(url: str, payload: dict[str, Any]) -> None:
+    """Best-effort webhook HTTP POST without signing."""
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(url, json=payload)
+    except Exception as exc:  # pragma: no cover - logging only
+        LOGGER.warning("Webhook delivery to %s failed: %s", url, exc)
+
+
+def build_signed_webhook_sender(secret: str, *, version: str = "v1") -> WebhookSender:
+    """Return a webhook sender that signs payloads using HMAC-SHA256."""
+
+    secret_bytes = secret.encode("utf-8")
+
+    async def _sender(url: str, payload: dict[str, Any]) -> None:
+        body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        signature = hmac.new(secret_bytes, body, hashlib.sha256).hexdigest()
+        headers = {
+            "Content-Type": "application/json",
+            "X-MDWB-Signature": f"{version}={signature}",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(url, content=body, headers=headers)
+        except Exception as exc:  # pragma: no cover - logging only
+            LOGGER.warning("Signed webhook delivery to %s failed: %s", url, exc)
+
+    return _sender

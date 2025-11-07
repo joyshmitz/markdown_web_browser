@@ -54,6 +54,8 @@ async def _fake_runner(*, job_id: str, url: str, store: Store, config=None):  # 
         blocklist_version="demo",
         blocklist_hits={},
         warnings=[],
+        overlap_match_ratio=0.0,
+        validation_failures=[],
     )
     return CaptureResult(tiles=[], manifest=manifest), []
 
@@ -76,6 +78,44 @@ async def test_job_manager_snapshot_queue(tmp_path: Path):
 
     assert JobState.BROWSER_STARTING.value in states
     assert states[-1] == JobState.DONE.value
+
+
+@pytest.mark.asyncio
+async def test_job_manager_event_log_records_history(tmp_path: Path):
+    config = StorageConfig(cache_root=tmp_path / "cache", db_path=tmp_path / "runs.db")
+    manager = JobManager(store=Store(config), runner=_fake_runner)
+    snapshot = await manager.create_job(JobCreateRequest(url="https://example.com/one"))
+    job_id = snapshot["id"]
+    task = manager._tasks[job_id]
+    await task
+
+    history = manager.get_events(job_id)
+
+    assert history
+    assert history[0]["snapshot"]["state"] == JobState.BROWSER_STARTING.value
+    assert history[-1]["snapshot"]["state"] == JobState.DONE.value
+
+
+@pytest.mark.asyncio
+async def test_job_manager_event_log_clamps_length(monkeypatch, tmp_path: Path):
+    from app import jobs as jobs_module
+
+    monkeypatch.setattr(jobs_module, "_EVENT_HISTORY_LIMIT", 3)
+    config = StorageConfig(cache_root=tmp_path / "cache", db_path=tmp_path / "runs.db")
+    manager = JobManager(store=Store(config), runner=_fake_runner)
+    snapshot = await manager.create_job(JobCreateRequest(url="https://example.org/two"))
+    job_id = snapshot["id"]
+    task = manager._tasks[job_id]
+    await task
+
+    manager._set_state(job_id, JobState.NAVIGATING)
+    manager._set_state(job_id, JobState.CAPTURING)
+    manager._set_state(job_id, JobState.DONE)
+
+    history = manager.get_events(job_id)
+
+    assert len(history) == 3
+    assert history[0]["snapshot"]["state"] == JobState.NAVIGATING.value
 
 
 @pytest.mark.asyncio

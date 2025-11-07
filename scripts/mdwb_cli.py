@@ -109,47 +109,6 @@ def _stream_job(job_id: str, settings: APISettings, *, raw: bool) -> None:
                     _log_event(event, payload)
 
 
-def _stream_events(job_id: str, settings: APISettings) -> None:
-    with httpx.Client(base_url=settings.base_url, timeout=None, headers=_auth_headers(settings)) as client:
-        with client.stream("GET", f"/jobs/{job_id}/events") as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    console.print(line)
-                    continue
-                console.print_json(data=record)
-
-
-def _poll_snapshots(
-    *,
-    job_id: str,
-    settings: APISettings,
-    output: typer.FileTextWrite,
-    follow: bool,
-    interval: float = 1.5,
-) -> None:
-    client = _client(settings)
-    terminal_states = {"DONE", "FAILED", "CANCELLED"}
-    while True:
-        response = client.get(f"/jobs/{job_id}")
-        response.raise_for_status()
-        payload = response.json()
-        json.dump(payload, output)
-        output.write("\n")
-        output.flush()
-        state = str(payload.get("state", "")).upper()
-        if not follow or state in terminal_states:
-            break
-        try:
-            typer.sleep(interval)
-        except KeyboardInterrupt:  # pragma: no cover
-            break
-
-
 @cli.command()
 def fetch(
     url: str = typer.Argument(..., help="URL to capture"),
@@ -212,77 +171,18 @@ def stream(
 def events(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    since: Optional[str] = typer.Option(None, help="ISO timestamp cursor for incremental polling."),
-    follow: bool = typer.Option(False, "--follow/--no-follow", help="Continue polling for new events."),
-    interval: float = typer.Option(2.0, "--interval", help="Polling interval in seconds when following."),
     output: typer.FileTextWrite = typer.Option(
         "-", "--output", "-o", help="File to append NDJSON events to (default stdout)."
     ),
 ) -> None:
-    """Fetch newline-delimited job events (JSONL)."""
-
-    settings = _resolve_settings(api_base)
-    client = _client(settings)
-    cursor = since
-    try:
-        while True:
-            params: dict[str, str] = {}
-            if cursor:
-                params["since"] = cursor
-            response = client.get(f"/jobs/{job_id}/events", params=params)
-            response.raise_for_status()
-            emitted = 0
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                output.write(line + "\n")
-                output.flush()
-                emitted += 1
-                cursor = _cursor_from_line(line, cursor)
-            if not follow:
-                break
-            if emitted == 0:
-                time.sleep(interval)
-            else:
-                time.sleep(interval)
-    finally:
-        client.close()
-
-
-@cli.command("events")
-def events_stream(
-    job_id: str = typer.Argument(..., help="Job identifier"),
-    api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-) -> None:
-    """Stream newline-delimited events for a job."""
-
-    settings = _resolve_settings(api_base)
-    _stream_events(job_id, settings)
-
-
-@cli.command()
-def watch(
-    job_id: str = typer.Argument(..., help="Job identifier"),
-    api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    output: typer.FileTextWrite = typer.Option("-", "--output", "-o", help="File to append JSON events to"),
-    follow: bool = typer.Option(True, "--follow/--no-follow", help="Keep streaming until DONE"),
-) -> None:
-    """Tail the forthcoming `/jobs/{id}/events` JSONLines feed (demo fallback until API lands)."""
+    """Tail `/jobs/{id}/events` once available (polling fallback)."""
 
     settings = _resolve_settings(api_base)
     try:
-        with httpx.Client(base_url=settings.base_url, timeout=None, headers=_auth_headers(settings)) as client:
-            with client.stream("GET", f"/jobs/{job_id}/events") as response:
-                if response.status_code >= 400:
-                    raise httpx.HTTPStatusError("events endpoint not ready", request=response.request, response=response)
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    output.write(line + "\n")
-                    output.flush()
-    except httpx.HTTPStatusError:
+        _stream_events(job_id, settings, output=output)
+    except httpx.HTTPError:
         console.print("[yellow]/jobs/{id}/events not available yet; falling back to polling snapshots.[/]")
-        _poll_snapshots(job_id=job_id, settings=settings, output=output, follow=follow)
+        _poll_snapshots(job_id=job_id, settings=settings, output=output, follow=True)
 
 
 @demo_cli.command("snapshot")

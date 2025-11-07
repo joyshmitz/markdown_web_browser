@@ -6,7 +6,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, cast
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
@@ -167,25 +167,71 @@ async def job_stream(job_id: str, request: Request) -> StreamingResponse:
 
 
 @app.get("/jobs/{job_id}/events")
-async def job_events(job_id: str, since: str | None = None) -> StreamingResponse:
+async def job_events(job_id: str, request: Request, since: str | None = None) -> StreamingResponse:
     try:
-        events = JOB_MANAGER.get_events(job_id, since=_parse_since(since))
+        initial_events = JOB_MANAGER.get_events(job_id, since=_parse_since(since))
+        queue = JOB_MANAGER.subscribe(job_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Job not found") from exc
 
+    last_sequence = initial_events[-1].get("sequence", -1) if initial_events else -1
+
     async def event_generator() -> AsyncIterator[str]:
-        for event in events:
-            yield json.dumps(event) + "\n"
+        heartbeat = 0
+        try:
+            for entry in initial_events:
+                yield _serialize_log_entry(entry) + "\n"
+
+            while True:
+                try:
+                    await asyncio.wait_for(queue.get(), timeout=5)
+                except asyncio.TimeoutError:
+                    heartbeat += 1
+                    heartbeat_entry = {
+                        "event": "heartbeat",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "data": {"count": heartbeat},
+                    }
+                    yield json.dumps(heartbeat_entry) + "\n"
+                    if await request.is_disconnected():
+                        break
+                    continue
+
+                events = JOB_MANAGER.get_events(job_id)
+                new_entries = [
+                    entry
+                    for entry in events
+                    if entry.get("sequence", -1) > last_sequence
+                ]
+                if not new_entries:
+                    if await request.is_disconnected():
+                        break
+                    continue
+                for entry in new_entries:
+                    seq = entry.get("sequence", last_sequence)
+                    max(last_sequence, seq)
+                    yield _serialize_log_entry(entry) + "\n"
+                if await request.is_disconnected():
+                    break
+        finally:
+            JOB_MANAGER.unsubscribe(job_id, queue)
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 
-@app.get("/jobs/demo/links.json")
-async def demo_links() -> list[dict[str, str]]:
-    """Return sample links JSON to unblock UI + agents while backend matures."""
+@app.get("/jobs/{job_id}/links.json")
+async def job_links(job_id: str) -> list[dict[str, str]]:
+    """Return stored links for a job, falling back to demo data when requested."""
 
-    blended = blend_dom_with_ocr(dom_links=demo_dom_links(), ocr_links=demo_ocr_links())
-    return serialize_links(blended)
+    if job_id == "demo":
+        blended = blend_dom_with_ocr(dom_links=demo_dom_links(), ocr_links=demo_ocr_links())
+        return serialize_links(blended)
+    try:
+        return store.read_links(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @app.get("/jobs/{job_id}/manifest.json")
@@ -197,15 +243,6 @@ async def job_manifest(job_id: str) -> JSONResponse:
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Manifest not available yet") from None
     return JSONResponse(manifest)
-
-
-@app.get("/jobs/{job_id}/links.json")
-async def job_links(job_id: str) -> list[dict[str, Any]]:
-    try:
-        return store.read_links(job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Job not found") from exc
-
 
 @app.get("/jobs/{job_id}/result.md")
 async def job_markdown(job_id: str) -> PlainTextResponse:
@@ -289,13 +326,23 @@ def _snapshot_events(snapshot: JobSnapshot) -> list[tuple[str, str]]:
                 events.append(("warnings", json.dumps(warnings)))
             environment = manifest.get("environment")
             if isinstance(environment, dict):
-                cft_label = environment.get("cft_label") or environment.get("cft_version") or "CfT"
-                playwright_version = environment.get("playwright_version") or "?"
+                env_data = cast(dict[str, Any], environment)
+                cft_label = str(env_data.get("cft_label") or env_data.get("cft_version") or "CfT")
+                playwright_version = str(env_data.get("playwright_version") or "?")
                 events.append(("runtime", f"{cft_label} · Playwright {playwright_version}"))
     artifacts = snapshot.get("artifacts")
     if artifacts:
         events.append(("artifacts", json.dumps(artifacts)))
+    error = snapshot.get("error")
+    if error:
+        events.append(("log", f"<li class=\"text-red-500\">{error}</li>"))
     return events
+
+
+def _serialize_log_entry(entry: dict[str, Any]) -> str:
+    payload = entry.copy()
+    payload.setdefault("event", "snapshot")
+    return json.dumps(payload)
 
 
 def _parse_since(value: str | None) -> datetime | None:

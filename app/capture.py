@@ -90,6 +90,7 @@ class CaptureResult:
 
     tiles: List[TileSlice]
     manifest: CaptureManifest
+    dom_snapshot: bytes | None = None
 
 
 async def capture_tiles(config: CaptureConfig) -> CaptureResult:
@@ -105,7 +106,14 @@ async def capture_tiles(config: CaptureConfig) -> CaptureResult:
         browser = await _launch_browser(playwright, settings.browser.playwright_channel)
         context = await _build_context(browser, config)
         try:
-            tiles, sweep_stats, user_agent, blocklist_hits, warnings = await _perform_viewport_sweeps(
+            (
+                tiles,
+                sweep_stats,
+                user_agent,
+                blocklist_hits,
+                warnings,
+                dom_snapshot,
+            ) = await _perform_viewport_sweeps(
                 context,
                 config,
                 viewport_overlap_px=settings.browser.viewport_overlap_px,
@@ -154,7 +162,7 @@ async def capture_tiles(config: CaptureConfig) -> CaptureResult:
         validation_failures=[],
     )
 
-    return CaptureResult(tiles=tiles, manifest=manifest_payload)
+    return CaptureResult(tiles=tiles, manifest=manifest_payload, dom_snapshot=dom_snapshot)
 
 
 async def _perform_viewport_sweeps(
@@ -170,7 +178,7 @@ async def _perform_viewport_sweeps(
     shrink_retry_limit: int,
     blocklist_config: BlocklistConfig,
     warning_settings: WarningSettings,
-) -> tuple[List[TileSlice], SweepStats, str, dict[str, int], list[CaptureWarningEntry]]:
+) -> tuple[List[TileSlice], SweepStats, str, dict[str, int], list[CaptureWarningEntry], bytes | None]:
     page = await context.new_page()
     await _mask_automation(page)
     mask_locators = [page.locator(selector) for selector in mask_selectors]
@@ -248,6 +256,7 @@ async def _perform_viewport_sweeps(
         y_offset = next_offset
 
     user_agent = await page.evaluate("navigator.userAgent")
+    dom_html = await page.content()
     await page.close()
 
     stats = SweepStats(
@@ -265,7 +274,8 @@ async def _perform_viewport_sweeps(
         settings=warning_settings,
     )
     warning_entries.extend(sweep_warnings)
-    return tiles, stats, user_agent, blocklist_hits, warning_entries
+    dom_bytes: bytes | None = dom_html.encode("utf-8") if dom_html else None
+    return tiles, stats, user_agent, blocklist_hits, warning_entries, dom_bytes
 
 
 _CHANNEL_ALIASES = {

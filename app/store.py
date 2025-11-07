@@ -219,6 +219,18 @@ class Store:
             session.commit()
             return manifest_path
 
+    def write_dom_snapshot(self, *, job_id: str, html: bytes | None) -> Path | None:
+        if not html:
+            return None
+        record = self.fetch_run(job_id)
+        if not record:
+            raise KeyError(f"Run {job_id} not found")
+        paths = RunPaths.from_record(record)
+        snapshot_path = paths.dom_snapshot_path
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_bytes(html)
+        return snapshot_path
+
     def write_tiles(self, *, job_id: str, tiles: Sequence[TileSlice]) -> list[dict[str, Any]]:
         if not tiles:
             return []
@@ -248,6 +260,13 @@ class Store:
             )
 
         return artifacts
+
+    def write_links(self, *, job_id: str, links: Sequence[Mapping[str, object]]) -> Path:
+        paths = self._paths_for_job(job_id)
+        payload = [dict(link) for link in links]
+        paths.links_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.links_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return paths.links_path
 
     def read_manifest(self, job_id: str) -> dict[str, Any]:
         record = self.fetch_run(job_id)

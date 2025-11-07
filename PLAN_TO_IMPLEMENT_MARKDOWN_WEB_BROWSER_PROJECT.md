@@ -200,6 +200,7 @@ _2025-11-08 — BrownStone (bd-dm9) introduced JSON-backed selector blocklist + 
 - OCR flake classification → Tag retries as `timeout`, `5xx`, `throttle`, or `quality_guard`; persist counters per job so ops can spot systemic issues (e.g., remote endpoint throttling) without combing logs.
 - Artifact corruption → Validate tile SHA256 before submit and after OCR response; auto-delete/re-shoot corrupted tiles while keeping the previous attempt zipped for debugging.
 - _2025-11-08 — BrownStone (bd-dm9) now logs warning/blocklist incidents to `ops/warnings.jsonl` automatically (configurable via `WARNING_LOG_PATH`)._
+- _2025-11-08 — BlueCreek (bd-bo2) is wiring the existing `JobManager` event log into `/jobs/{id}/events`, adding heartbeats, and keeping the NDJSON feed tailing future updates so CLI/agents can rely on a continuous history._
 
 ---
 
@@ -245,7 +246,7 @@ mdwb fetch https://example.com \
 
 _2025-11-08 — PurpleDog (bd-dwf) added the initial Typer/Rich CLI scaffold (`scripts/mdwb_cli.py`) with demo `snapshot/links/stream/watch/events/warnings` commands powered by the `/jobs/demo/*` endpoints (including `--json`/`--raw` output + manifest warning/blocklist rendering), `mdwb dom links` for offline DOM snapshot parsing, and the first real `/jobs` commands (`mdwb fetch/show/stream/watch`) wired to the JobManager SSE feed / polling API (fetch supports `--watch`) while `mdwb watch` falls back to polling until `/jobs/{id}/events` lands._
 
-_2025-11-08 — RunPaths now tracks `dom_snapshot_path` and Store exposes `dom_snapshot_path(job_id)` so CLI/tests can discover the captured DOM HTML once t82 writes snapshots._
+_2025-11-08 — RunPaths now tracks `dom_snapshot_path` and the capture pipeline writes each job’s DOM HTML plus extracted `links.json` to disk (`Store.write_dom_snapshot` + `write_links`), with `GET /jobs/{job_id}/links.json` + `mdwb dom links --job-id …` surfacing the data._
 
 _2025-11-08 — BrownStone (bd-dm9) added `mdwb warnings tail` to read the new warning/blocklist JSONL log (`WARNING_LOG_PATH`)._
 
