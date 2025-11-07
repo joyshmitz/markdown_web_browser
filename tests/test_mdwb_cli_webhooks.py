@@ -18,6 +18,10 @@ class StubResponse:
     def json(self):  # noqa: ANN001
         return self._payload
 
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(self.text or f"status {self.status_code}")
+
 
 class StubClient:
     def __init__(self, *, get=None, post=None, delete=None):  # noqa: ANN001
