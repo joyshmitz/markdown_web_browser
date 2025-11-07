@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -10,10 +11,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-app = FastAPI(title="Markdown Web Browser")
-app.mount("/static", StaticFiles(directory="web"), name="static")
+BASE_DIR = Path(__file__).resolve().parent.parent
+WEB_ROOT = BASE_DIR / "web"
 
-WEB_ROOT = Path("web")
+app = FastAPI(title="Markdown Web Browser")
+app.mount("/static", StaticFiles(directory=WEB_ROOT), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -39,6 +41,58 @@ async def demo_job_stream(request: Request) -> StreamingResponse:
             ("state", "<span class=\"badge badge--info\">CAPTURING</span>"),
             ("progress", "4 / 12 tiles"),
             ("runtime", "CfT Stable-1 · Playwright 1.55.0"),
+            (
+                "rendered",
+                "<article><h3>Demo Article</h3><p>The Markdown preview updates live as OCR tiles finish.</p></article>",
+            ),
+            (
+                "raw",
+                "# Demo Article\n\nThis Markdown block mirrors OCR output. Tile provenance comments will appear inline.\n",
+            ),
+            (
+                "manifest",
+                json.dumps(
+                    {
+                        "job_id": "demo",
+                        "cft_version": "Stable-1 (130.0.6723.69)",
+                        "playwright_version": "1.55.0",
+                        "device_scale_factor": 2,
+                        "long_side_px": 1288,
+                        "tiles_total": 12,
+                        "capture_ms": 11234,
+                        "ocr_ms": 20987,
+                        "stitch_ms": 1289,
+                    }
+                ),
+            ),
+            (
+                "links",
+                json.dumps(
+                    [
+                        {
+                            "text": "Example Docs",
+                            "href": "https://example.com/docs",
+                            "source": "DOM",
+                            "delta": "✓",
+                        },
+                        {
+                            "text": "Unknown link",
+                            "href": "https://demo.invalid",
+                            "source": "OCR-only",
+                            "delta": "Δ +1",
+                        },
+                    ]
+                ),
+            ),
+            (
+                "artifacts",
+                json.dumps(
+                    [
+                        {"id": "tile_00", "offset": "y=0", "sha": "a1b2c3"},
+                        {"id": "tile_01", "offset": "y=1100", "sha": "d4e5f6"},
+                    ]
+                ),
+            ),
             (
                 "log",
                 "<li>00:00:01 — Started viewport sweep (1280×2000, overlap 120px)</li>",
@@ -71,3 +125,22 @@ async def demo_job_stream(request: Request) -> StreamingResponse:
                 return
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/jobs/demo/links.json")
+async def demo_links() -> list[dict[str, str]]:
+    """Return sample links JSON to unblock UI + agents while backend matures."""
+
+    return [
+        {
+            "text": "Example Docs",
+            "href": "https://example.com/docs",
+            "source": "DOM",
+            "delta": "✓",
+        },
+        {
+            "text": "Support",
+            "href": "https://example.com/support",
+            "source": "DOM+OCR",
+            "delta": "Δ +1",
+        },
+    ]

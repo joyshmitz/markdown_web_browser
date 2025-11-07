@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from enum import Enum
+from importlib import metadata
 from typing import TypedDict
+
+from app.schemas import ManifestMetadata
+from app.settings import Settings, settings as global_settings
+
+try:  # Playwright is an optional dependency in some CI environments
+    PLAYWRIGHT_VERSION = metadata.version("playwright")
+except metadata.PackageNotFoundError:  # pragma: no cover - development convenience
+    PLAYWRIGHT_VERSION = None
 
 
 class JobState(str, Enum):
@@ -29,13 +38,25 @@ class JobSnapshot(TypedDict, total=False):
     url: str
     progress: dict[str, int]
     manifest_path: str
+    manifest: dict[str, object]
     error: str | None
 
 
-def build_initial_snapshot(url: str, *, job_id: str) -> JobSnapshot:
+def build_initial_snapshot(
+    url: str,
+    *,
+    job_id: str,
+    settings: Settings | None = None,
+) -> JobSnapshot:
     """Construct a basic snapshot stub used before persistence wiring exists."""
 
-    return JobSnapshot(
+    manifest = None
+    active_settings = settings or global_settings
+    if active_settings:
+        environment = active_settings.manifest_environment(playwright_version=PLAYWRIGHT_VERSION)
+        manifest = ManifestMetadata(environment=environment)
+
+    snapshot = JobSnapshot(
         id=job_id,
         url=url,
         state=JobState.BROWSER_STARTING,
@@ -43,3 +64,6 @@ def build_initial_snapshot(url: str, *, job_id: str) -> JobSnapshot:
         manifest_path="",
         error=None,
     )
+    if manifest:
+        snapshot["manifest"] = manifest.model_dump()
+    return snapshot

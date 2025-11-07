@@ -9,6 +9,8 @@ from typing import Final
 
 from decouple import Config as DecoupleConfig, RepositoryEnv
 
+from app.schemas import ConcurrencyWindow, ManifestEnvironment, ViewportSettings
+
 __all__ = [
     "BrowserSettings",
     "OCRSettings",
@@ -22,11 +24,21 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class BrowserSettings:
-    """Capture/browser-related knobs that must be echoed into manifests."""
+    """Capture/browser-related knobs that surface in manifests."""
 
     cft_version: str
+    cft_label: str
     playwright_channel: str
     browser_transport: str
+    viewport_width: int
+    viewport_height: int
+    device_scale_factor: int
+    color_scheme: str
+    viewport_overlap_px: int
+    tile_overlap_px: int
+    scroll_settle_ms: int
+    max_viewport_sweeps: int
+    screenshot_mask_selectors: tuple[str, ...]
     screenshot_style_hash: str
 
 
@@ -53,9 +65,10 @@ class TelemetrySettings:
 
 @dataclass(frozen=True, slots=True)
 class StorageSettings:
-    """Filesystem layout for cache + artifact persistence."""
+    """Filesystem + SQLite layout for job artifacts."""
 
     cache_root: Path
+    db_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,22 +81,36 @@ class Settings:
     telemetry: TelemetrySettings
     storage: StorageSettings
 
-    def manifest_environment(self, *, playwright_version: str | None = None) -> dict[str, object]:
-        """Return a dict used by manifest builders to echo env metadata."""
+    def manifest_environment(self, *, playwright_version: str | None = None) -> ManifestEnvironment:
+        """Return the manifest metadata block used across captures."""
 
-        return {
-            "cft_version": self.browser.cft_version,
-            "playwright_channel": self.browser.playwright_channel,
-            "playwright_version": playwright_version,
-            "browser_transport": self.browser.browser_transport,
-            "screenshot_style_hash": self.browser.screenshot_style_hash,
-            "ocr_model": self.ocr.model,
-            "ocr_use_fp8": self.ocr.use_fp8,
-            "ocr_concurrency": {
-                "min": self.ocr.min_concurrency,
-                "max": self.ocr.max_concurrency,
-            },
-        }
+        viewport = ViewportSettings(
+            width=self.browser.viewport_width,
+            height=self.browser.viewport_height,
+            device_scale_factor=self.browser.device_scale_factor,
+            color_scheme=self.browser.color_scheme,
+        )
+        concurrency = ConcurrencyWindow(
+            min=self.ocr.min_concurrency,
+            max=self.ocr.max_concurrency,
+        )
+        return ManifestEnvironment(
+            cft_version=self.browser.cft_version,
+            cft_label=self.browser.cft_label,
+            playwright_channel=self.browser.playwright_channel,
+            playwright_version=playwright_version,
+            browser_transport=self.browser.browser_transport,
+            viewport=viewport,
+            viewport_overlap_px=self.browser.viewport_overlap_px,
+            tile_overlap_px=self.browser.tile_overlap_px,
+            scroll_settle_ms=self.browser.scroll_settle_ms,
+            max_viewport_sweeps=self.browser.max_viewport_sweeps,
+            screenshot_style_hash=self.browser.screenshot_style_hash,
+            screenshot_mask_selectors=self.browser.screenshot_mask_selectors,
+            ocr_model=self.ocr.model,
+            ocr_use_fp8=self.ocr.use_fp8,
+            ocr_concurrency=concurrency,
+        )
 
 
 def load_config(env_path: str = ".env") -> DecoupleConfig:
@@ -100,16 +127,91 @@ def _bool(cfg: DecoupleConfig, key: str, *, default: bool) -> bool:
     return cfg(key, cast=bool, default=default)
 
 
+def _csv_tuple(cfg: DecoupleConfig, key: str) -> tuple[str, ...]:
+    raw = cfg(key, default="")
+    if not raw:
+        return tuple()
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
+def _derive_screenshot_hash(
+    *,
+    explicit: str,
+    viewport_width: int,
+    viewport_height: int,
+    device_scale_factor: int,
+    color_scheme: str,
+    viewport_overlap_px: int,
+    tile_overlap_px: int,
+    screenshot_mask_selectors: tuple[str, ...],
+) -> str:
+    if explicit:
+        return explicit
+
+    import hashlib
+    import json
+
+    payload = {
+        "viewport": {
+            "width": viewport_width,
+            "height": viewport_height,
+            "device_scale_factor": device_scale_factor,
+            "color_scheme": color_scheme,
+        },
+        "overlap": {
+            "viewport_px": viewport_overlap_px,
+            "tile_px": tile_overlap_px,
+        },
+        "mask_selectors": screenshot_mask_selectors,
+    }
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return digest[:8]
+
+
 @lru_cache(maxsize=1)
 def get_settings(env_path: str = ".env") -> Settings:
     """Load and memoize structured settings for the current process."""
 
     cfg = load_config(env_path)
+
+    viewport_width = _int(cfg, "CAPTURE_VIEWPORT_WIDTH", default=1280)
+    viewport_height = _int(cfg, "CAPTURE_VIEWPORT_HEIGHT", default=2000)
+    device_scale_factor = _int(cfg, "CAPTURE_DEVICE_SCALE_FACTOR", default=2)
+    color_scheme = cfg("CAPTURE_COLOR_SCHEME", default="light")
+    viewport_overlap_px = _int(cfg, "VIEWPORT_OVERLAP_PX", default=120)
+    tile_overlap_px = _int(cfg, "TILE_OVERLAP_PX", default=120)
+    scroll_settle_ms = _int(cfg, "SCROLL_SETTLE_MS", default=350)
+    max_viewport_sweeps = _int(cfg, "MAX_VIEWPORT_SWEEPS", default=200)
+    long_side_px = _int(cfg, "TILE_LONG_SIDE_PX", default=1288)
+    mask_selectors = _csv_tuple(cfg, "SCREENSHOT_MASK_SELECTORS")
+    screenshot_hash = _derive_screenshot_hash(
+        explicit=cfg("SCREENSHOT_STYLE_HASH", default=""),
+        viewport_width=viewport_width,
+        viewport_height=viewport_height,
+        device_scale_factor=device_scale_factor,
+        color_scheme=color_scheme,
+        long_side_px=long_side_px,
+        viewport_overlap_px=viewport_overlap_px,
+        tile_overlap_px=tile_overlap_px,
+        screenshot_mask_selectors=mask_selectors,
+    )
+
     browser = BrowserSettings(
         cft_version=cfg("CFT_VERSION", default="chrome-130.0.6723.69"),
+        cft_label=cfg("CFT_LABEL", default="Stable-1"),
         playwright_channel=cfg("PLAYWRIGHT_CHANNEL", default="cft"),
         browser_transport=cfg("PLAYWRIGHT_TRANSPORT", default="cdp"),
-        screenshot_style_hash=cfg("SCREENSHOT_STYLE_HASH", default="dev-sweeps-v1"),
+        viewport_width=viewport_width,
+        viewport_height=viewport_height,
+        device_scale_factor=device_scale_factor,
+        color_scheme=color_scheme,
+        long_side_px=long_side_px,
+        viewport_overlap_px=viewport_overlap_px,
+        tile_overlap_px=tile_overlap_px,
+        scroll_settle_ms=scroll_settle_ms,
+        max_viewport_sweeps=max_viewport_sweeps,
+        screenshot_mask_selectors=mask_selectors,
+        screenshot_style_hash=screenshot_hash,
     )
     ocr = OCRSettings(
         server_url=cfg("OLMOCR_SERVER", default="https://ai2endpoints.cirrascale.ai/api"),
@@ -123,11 +225,15 @@ def get_settings(env_path: str = ".env") -> Settings:
     if ocr.max_concurrency < ocr.min_concurrency:
         msg = "OCR_MAX_CONCURRENCY must be >= OCR_MIN_CONCURRENCY"
         raise ValueError(msg)
+
     telemetry = TelemetrySettings(
         prometheus_port=_int(cfg, "PROMETHEUS_PORT", default=9000),
         htmx_sse_heartbeat_ms=_int(cfg, "HTMX_SSE_HEARTBEAT_MS", default=4000),
     )
-    storage = StorageSettings(cache_root=Path(cfg("CACHE_ROOT", default=".cache")))
+    storage = StorageSettings(
+        cache_root=Path(cfg("CACHE_ROOT", default=".cache")),
+        db_path=Path(cfg("RUNS_DB_PATH", default="runs.db")),
+    )
 
     return Settings(
         env_path=env_path,
@@ -138,6 +244,5 @@ def get_settings(env_path: str = ".env") -> Settings:
     )
 
 
-# Statically importable settings singleton for convenience in modules that
-# value module-level constants over injecting the loader everywhere.
+# Statically importable settings singleton for modules that prefer constants over DI.
 settings: Final[Settings] = get_settings()

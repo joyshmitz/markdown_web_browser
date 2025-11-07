@@ -7,7 +7,13 @@
     <link rel="stylesheet" href="/static/tailwind.css" />
   </head>
   <body class="app-body">
-    <div class="app-shell" hx-ext="sse" hx-sse="connect:/jobs/demo/stream">
+    <div
+      class="app-shell"
+      data-stream-root
+      data-stream-template="/jobs/{job_id}/stream"
+      data-job-id="demo"
+      data-links-template="/jobs/{job_id}/links.json"
+    >
       <header class="toolbar">
         <div class="toolbar__group">
           <label class="toolbar__label" for="job-url">URL</label>
@@ -27,21 +33,25 @@
             <option value="research">Research</option>
           </select>
         </div>
+        <div class="toolbar__group">
+          <label class="toolbar__label" for="job-id">Job ID</label>
+          <input id="job-id" name="job_id" type="text" value="demo" class="toolbar__input" />
+        </div>
         <button class="toolbar__button" type="button" id="run-job">Run Capture</button>
       </header>
 
       <section class="status-grid">
         <article class="status-card">
           <p class="status-label">State</p>
-          <p class="status-value" id="job-state" hx-sse="swap:state">Waiting for job…</p>
+          <p class="status-value" id="job-state" data-sse-field="state">Waiting for job…</p>
         </article>
         <article class="status-card">
           <p class="status-label">Progress</p>
-          <p class="status-value" id="job-progress" hx-sse="swap:progress">0 / 0 tiles</p>
+          <p class="status-value" id="job-progress" data-sse-field="progress">0 / 0 tiles</p>
         </article>
         <article class="status-card">
           <p class="status-label">CfT / Playwright</p>
-          <p class="status-value" id="job-runtime" hx-sse="swap:runtime">–</p>
+          <p class="status-value" id="job-runtime" data-sse-field="runtime">–</p>
         </article>
         <article class="status-card">
           <p class="status-label">SSE</p>
@@ -63,23 +73,32 @@
         <div class="tab-panels">
           <article class="tab-panel" data-tab-panel="rendered">
             <h2>Rendered Markdown</h2>
-            <p class="placeholder">Streaming preview will render here as soon as OCR tiles arrive.</p>
+            <div class="placeholder" data-sse-field="rendered">
+              Streaming preview will render here as soon as OCR tiles arrive.
+            </div>
           </article>
           <article class="tab-panel" data-tab-panel="raw" hidden>
             <h2>Raw Markdown</h2>
-            <pre class="placeholder">Waiting on OCR output…</pre>
+            <pre class="placeholder" data-sse-field="raw">Waiting on OCR output…</pre>
           </article>
           <article class="tab-panel" data-tab-panel="artifacts" hidden>
             <h2>Artifacts</h2>
-            <p class="placeholder">Tile gallery + provenance metadata coming soon.</p>
+            <ul class="artifact-list" data-sse-field="artifacts">
+              <li class="placeholder">Tile gallery + provenance metadata coming soon.</li>
+            </ul>
           </article>
           <article class="tab-panel" data-tab-panel="links" hidden>
             <h2>Links</h2>
-            <p class="placeholder">DOM vs OCR link delta table will populate once capture jobs run.</p>
+            <button type="button" class="toolbar__button toolbar__button--small" data-links-refresh>
+              Refresh Links JSON
+            </button>
+            <div class="links-table" data-sse-field="links">
+              <p class="placeholder">DOM vs OCR link delta table will populate once capture jobs run.</p>
+            </div>
           </article>
           <article class="tab-panel" data-tab-panel="manifest" hidden>
             <h2>Manifest</h2>
-            <p class="placeholder">CfT label, Playwright version, screenshot style hash, and timing metrics will stream into this panel.</p>
+            <pre class="placeholder manifest" data-sse-field="manifest">CfT label, Playwright version, screenshot style hash, and timing metrics will stream into this panel.</pre>
           </article>
           <article class="tab-panel" data-tab-panel="embeddings" hidden>
             <h2>Embeddings</h2>
@@ -87,7 +106,7 @@
           </article>
           <article class="tab-panel" data-tab-panel="events" hidden>
             <h2>Event Feed</h2>
-            <ul class="event-feed" id="events-log" hx-sse="swap:log"></ul>
+            <ul class="event-feed" id="events-log" data-sse-log></ul>
           </article>
         </div>
       </section>

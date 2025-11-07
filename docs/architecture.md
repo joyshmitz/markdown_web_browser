@@ -68,7 +68,21 @@ guarded hyphenation, table seam rules)
 - `links.json` (anchors/forms/headings/meta/landmarks)
 - `manifest.json` (CfT label+build, DPR, viewport, policies, timings, hashes)
 
+## Persistence & Bundles (Plan §§2, 10, 19.4, 19.6)
+
+- **Content-addressed layout** — now enforced via `RunPaths` in `app/store.py`. Each
+  run lives under `{CACHE_ROOT}/{host}/{path_slug}/{yyyy-mm-dd_HHMMSS}/` with
+  deterministic `manifest.json`, `out.md`, `links.json`, and `artifact/` children.
+- **SQLite metadata (`RUNS_DB_PATH`)** — `RunRecord`/`LinkRecord` tables capture CfT
+  label/build, screenshot style hash, OCR policy, concurrency window, and timing
+  metrics for dashboards. The `section_embeddings` virtual table (sqlite-vec) stores
+  1536-dim vectors keyed by `(run_id, section_id, tile_start, tile_end)` so agents can
+  jump directly to relevant Markdown spans.
+- **Tar bundles** — `Store.build_bundle` streams each run directory through a
+  `tarfile` + `zstandard` writer, producing `bundle.tar.zst` next to the artifacts.
+  Use this for incident attachments or dataset exports (Plan §19.6).
+
 ## Gotchas (and our mitigations)
 - **Raster limits on tall pages** → viewport sweeps. 
-- **Animated UIs** → reduced‑motion + CSS disables; test‑time `animations:'disabled'` for smoketests. 
+- **Animated UIs** → reduced-motion + CSS disables; test-time `animations:'disabled'` for smoketests. 
 - **Consent overlays** → adblock engine + CSS hide + “retry sweep if height shrinks” heuristic. 

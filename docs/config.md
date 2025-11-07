@@ -1,42 +1,109 @@
-# Configuration & Secrets (Decouple-first)
-_Last updated: 2025-11_
+# Configuration Reference
 
-All settings come from `.env` via **python-decouple**. Never read env vars directly and never overwrite `.env`.
+_Last updated: 2025-11-07 (UTC)_
+
+All runtime configuration flows through `python-decouple`. Import
+`app.settings.settings` instead of reading environment variables directly so the
+browser/OCR defaults stay consistent across services and manifests.
 
 ```python
-from decouple import Config as DecoupleConfig, RepositoryEnv
-decouple_config = DecoupleConfig(RepositoryEnv(".env"))
-API_BASE_URL = decouple_config("API_BASE_URL", default="http://localhost:8000")
-````
+from app.settings import settings
 
-## Required Keys
+print(settings.browser.cft_version)
+print(settings.ocr.server_url)
+```
 
-| Key                | Purpose                               | Example                 | Manifest Echo           |
-| ------------------ | ------------------------------------- | ----------------------- | ----------------------- |
-| `OLMOCR_SERVER`    | Base URL for OCR service              | `https://…`             | `ocr.server`            |
-| `OLMOCR_API_KEY`   | Token for hosted OCR                  | `sk-…`                  | `ocr.provider="remote"` |
-| `OLMOCR_MODEL`     | Default model policy key              | `olmOCR-2-7B-1025-FP8`  | `ocr.model`             |
-| `OCR_LOCAL_URL`    | vLLM/SGLang local endpoint (optional) | `http://127.0.0.1:8001` | `ocr.provider="local"`  |
-| `CACHE_ROOT`       | Root for content-addressed cache      | `.cache`                | `cache.root`            |
-| `HTTP2_ENABLE`     | Enable HTTP/2 to OCR host             | `true`                  | `net.http2=true`        |
-| `OCR_MAX_INFLIGHT` | Upper bound for tile concurrency      | `8`                     | `ocr.max_inflight`      |
-| `RATE_BUCKET_QPS`  | Token-bucket target rate per host     | `6`                     | `net.rate.bucket_qps`   |
-| `CFT_CHANNEL`      | CfT channel (e.g. `Stable`)           | `Stable`                | `browser.cft_channel`   |
-| `CFT_BUILD`        | Exact CfT build                       | `130.0.6723.69`         | `browser.cft_build`     |
+## Environment Variables
 
-**HTTP/2** is strongly recommended when posting many tiles to the same host. Enable in the OCR client using `httpx.AsyncClient(http2=True)`.
+| Name | Default | Purpose / Manifest Echo |
+| --- | --- | --- |
+| `OLMOCR_SERVER` | `https://ai2endpoints.cirrascale.ai/api` | Remote olmOCR endpoint recorded as `ocr.server_url`. |
+| `OLMOCR_API_KEY` | *(unset)* | API key for hosted olmOCR. Required outside local dev. |
+| `OLMOCR_MODEL` | `olmOCR-2-7B-1025-FP8` | Default OCR policy identifier included in manifests + provenance comments. |
+| `OCR_LOCAL_URL` | *(unset)* | Optional self-hosted olmOCR endpoint; overrides `OLMOCR_SERVER` when set. |
+| `OCR_USE_FP8` | `true` | Whether FP8 inference is enabled; surfaced via `environment.ocr_use_fp8`. |
+| `API_BASE_URL` | `http://localhost:8000` | FastAPI base URL consumed by the CLI + automation; recorded in manifests when replaying jobs. |
+| `MDWB_API_KEY` | *(unset)* | Optional bearer token for `/jobs` HTTP calls (CLI + automation). |
+| `OCR_MIN_CONCURRENCY` | `2` | Minimum OCR concurrency window (`environment.ocr_concurrency.min`). |
+| `OCR_MAX_CONCURRENCY` | `8` | Maximum OCR concurrency window (`environment.ocr_concurrency.max`). Must be ≥ min. |
+| `CACHE_ROOT` | `.cache` | Root directory for content-addressed artifacts (tiles, manifests, tar bundles). |
+| `RUNS_DB_PATH` | `runs.db` | SQLite file storing `runs`, `links`, and sqlite-vec embeddings. |
+| `CFT_VERSION` | `chrome-130.0.6723.69` | Chrome for Testing label/build pinned for Playwright; log in every manifest. |
+| `CFT_LABEL` | `Stable-1` | CfT channel label surfaced in `environment.cft_label`. |
+| `PLAYWRIGHT_CHANNEL` | `cft` | Browser channel launched by Playwright. |
+| `PLAYWRIGHT_TRANSPORT` | `cdp` | Transport used to drive Chromium (`cdp` or `bidi`); needed for ops escalations. |
+| `CAPTURE_VIEWPORT_WIDTH` | `1280` | Pixel width for captures + manifest `viewport.width`. |
+| `CAPTURE_VIEWPORT_HEIGHT` | `2000` | Pixel height for captures + manifest `viewport.height`. |
+| `CAPTURE_DEVICE_SCALE_FACTOR` | `2` | DSF used for capture; feeds screenshot style hash + manifest viewport block. |
+| `CAPTURE_COLOR_SCHEME` | `light` | Color scheme forced during capture (manifest `viewport.color_scheme`). |
+| `VIEWPORT_OVERLAP_PX` | `120` | Pixels of overlap between viewport sweeps (Plan §19.2). |
+| `CAPTURE_LONG_SIDE_PX` | `1288` | Tile longest side enforced by pyvips tiler + CLI defaults. |
+| `TILE_OVERLAP_PX` | `120` | Overlap inside the pyvips tiler; must match SSIM stitching heuristics. |
+| `SCROLL_SETTLE_MS` | `350` | Wait time between scrolls so lazy-loaded content settles. |
+| `MAX_VIEWPORT_SWEEPS` | `200` | Guardrail to prevent infinite scroll loops. |
+| `SCREENSHOT_MASK_SELECTORS` | *(empty)* | Comma-separated selectors masked during screenshots (cookie banners, tickers). |
+| `SCREENSHOT_STYLE_HASH` | auto-derived if blank | Hash of viewport/mask settings included in manifests & bug reports. |
+| `PROMETHEUS_PORT` | `9000` | Port for the Prometheus metrics endpoint. |
+| `HTMX_SSE_HEARTBEAT_MS` | `4000` | Interval (ms) for SSE heartbeat events streamed to the UI. |
 
-## Recommended Defaults
+Add any new variables to `.env.example`, document them here, and update the
+manifest schema if they need to be echoed downstream.
 
-* Viewport `1280×2000`, `deviceScaleFactor=2`, `colorScheme="light"`, `reduced_motion="reduce"`.
-* Chunked capture threshold `total_scroll_height > 12000` → switch from single full-page to sweep.
-* Tiling: overlap `≈120 px`, longest side `≤1288 px` for OCR.
+## Manifest Metadata
 
-## Conditional Requests (Cache)
+`app.settings.Settings.manifest_environment()` returns the canonical dictionary
+used by the capture pipeline when building `manifest.json`. The Pydantic models
+in `app/schemas.py` (see `ManifestEnvironment`, `ManifestTimings`, and
+`ManifestMetadata`) ensure each manifest records:
 
-Always attempt conditional HEAD/GET with `ETag`/`Last-Modified` before a fresh capture. On **304**, reuse the last run’s artifacts.
+* CfT version + Playwright channel/version
+* Browser transport (CDP vs BiDi)
+* Screenshot style hash for the masked/blocked CSS bundle
+* OCR model + FP8 status + concurrency window
+* Timing metrics (`capture_ms`, `ocr_ms`, `stitch_ms`, `total_ms`) once stages
+  execute
 
-## Observability
+```jsonc
+{
+  "environment": {
+    "cft_version": "chrome-130.0.6723.69",
+    "cft_label": "Stable-1",
+    "playwright_channel": "cft",
+    "playwright_version": "1.50.0",
+    "browser_transport": "cdp",
+    "viewport": {
+      "width": 1280,
+      "height": 2000,
+      "device_scale_factor": 2,
+      "color_scheme": "light"
+    },
+    "viewport_overlap_px": 120,
+    "tile_overlap_px": 120,
+    "scroll_settle_ms": 350,
+    "max_viewport_sweeps": 200,
+    "screenshot_style_hash": "dev-sweeps-v1",
+    "screenshot_mask_selectors": [],
+    "ocr_model": "olmOCR-2-7B-1025-FP8",
+    "ocr_use_fp8": true,
+    "ocr_concurrency": { "min": 2, "max": 8 }
+  },
+  "timings": {
+    "capture_ms": 1480,
+    "ocr_ms": 4230,
+    "stitch_ms": 510,
+    "total_ms": 6220
+  }
+}
+```
 
-* Expose `/metrics` with **prometheus-fastapi-instrumentator** (p50/p95 per stage, 429s, 5xx).
-* Add OpenTelemetry FastAPI instrumentation for traces across NAVIGATING/SCROLLING/CAPTURING/TILING/OCR/STITCHING.
+## Operational Defaults & Notes
+
+* Always run Playwright with `viewport=1280×2000`, `deviceScaleFactor=2`,
+  `colorScheme="light"`, reduced motion, and animation disabling so CfT output
+  is deterministic.
+* Tiling policy: longest side ≤1288 px with ≈120 px overlap (Plan §§3, 19.3).
+* Use HTTP/2 (`httpx.AsyncClient(http2=True)`) when sending many OCR tiles to
+  the same host; document rate limits + concurrency in manifests so Ops can
+  correlate spikes.
+* Prometheus + HTMX SSE heartbeat intervals come directly from this config—keep
+  dashboards/tests in sync with any changes.

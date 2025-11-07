@@ -94,6 +94,13 @@ body {
   opacity: 0.9;
 }
 
+.toolbar__button--small {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+  align-self: flex-start;
+}
+
 .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -171,6 +178,13 @@ body {
   border: 1px dashed var(--border);
   border-radius: 0.5rem;
   padding: 1rem;
+  white-space: pre-wrap;
+  font-family: "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.placeholder.manifest {
+  background: rgba(2, 6, 23, 0.6);
 }
 
 .event-feed {
@@ -189,6 +203,46 @@ body {
   padding: 0.75rem;
   font-size: 0.9rem;
   line-height: 1.3;
+}
+
+.artifact-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0;
+}
+
+.artifact-list li {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  font-size: 0.9rem;
+}
+
+.links-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.links-table th,
+.links-table td {
+  border: 1px solid var(--border);
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.links-table th {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: rgba(15, 23, 42, 0.7);
 }
 
 .badge {

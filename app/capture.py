@@ -1,8 +1,19 @@
-"""Playwright-based capture routines (viewport sweeps, metadata logging)."""
+"""Playwright-based capture routines (viewport sweeps + metadata logging)."""
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
+from importlib import metadata
+from typing import Any, List, Sequence
+
+from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+
+from app.settings import get_settings
+from app.tiler import TileSlice, slice_into_tiles
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -14,10 +25,212 @@ class CaptureConfig:
     viewport_height: int = 2000
     device_scale_factor: int = 2
     color_scheme: str = "light"
+    reduced_motion: bool = True
 
 
-async def capture_tiles(config: CaptureConfig) -> list[bytes]:
-    """Stub the viewport sweep until Playwright plumbing is implemented."""
+@dataclass(slots=True)
+class ScrollPolicy:
+    """Manifest-friendly description of the viewport sweep routine."""
 
-    # This intentionally raises until the real capture stack is wired up.
-    raise NotImplementedError("capture_tiles requires Playwright integration")
+    settle_ms: int
+    max_steps: int
+    viewport_overlap_px: int
+    viewport_step_px: int
+
+
+@dataclass(slots=True)
+class SweepStats:
+    """Counters that help ops diagnose scroll instability."""
+
+    sweep_count: int
+    total_scroll_height: int
+    shrink_events: int
+
+
+@dataclass(slots=True)
+class CaptureManifest:
+    """Metadata recorded alongside tiles and manifests."""
+
+    url: str
+    cft_label: str
+    cft_version: str
+    playwright_channel: str
+    playwright_version: str
+    browser_transport: str
+    screenshot_style_hash: str
+    viewport_width: int
+    viewport_height: int
+    device_scale_factor: int
+    capture_ms: int
+    tiles_total: int
+    scroll_policy: ScrollPolicy
+    sweep_stats: SweepStats
+    user_agent: str
+
+
+@dataclass(slots=True)
+class CaptureResult:
+    """Tiles plus the manifest metadata required downstream."""
+
+    tiles: List[TileSlice]
+    manifest: CaptureManifest
+
+
+async def capture_tiles(config: CaptureConfig) -> CaptureResult:
+    """Run a deterministic viewport sweep and return OCR-ready tiles."""
+
+    settings = get_settings()
+    start = time.perf_counter()
+
+    async with async_playwright() as playwright:
+        browser = await _launch_browser(playwright, settings.browser.playwright_channel)
+        context = await _build_context(browser, config)
+        try:
+            tiles, sweep_stats, user_agent = await _perform_viewport_sweeps(
+                context,
+                config,
+                viewport_overlap_px=settings.browser.viewport_overlap_px,
+                tile_overlap_px=settings.browser.tile_overlap_px,
+                settle_ms=settings.browser.scroll_settle_ms,
+                max_steps=settings.browser.max_viewport_sweeps,
+                mask_selectors=settings.browser.screenshot_mask_selectors,
+            )
+        finally:
+            await context.close()
+            await browser.close()
+
+    capture_ms = int((time.perf_counter() - start) * 1000)
+
+    manifest_payload = CaptureManifest(
+        url=config.url,
+        cft_label=settings.browser.cft_label,
+        cft_version=settings.browser.cft_version,
+        playwright_channel=settings.browser.playwright_channel,
+        playwright_version=_playwright_version(),
+        browser_transport=settings.browser.browser_transport,
+        screenshot_style_hash=settings.browser.screenshot_style_hash,
+        viewport_width=config.viewport_width,
+        viewport_height=config.viewport_height,
+        device_scale_factor=config.device_scale_factor,
+        capture_ms=capture_ms,
+        tiles_total=len(tiles),
+        scroll_policy=ScrollPolicy(
+            settle_ms=settings.browser.scroll_settle_ms,
+            max_steps=settings.browser.max_viewport_sweeps,
+            viewport_overlap_px=settings.browser.viewport_overlap_px,
+            viewport_step_px=max(1, config.viewport_height - settings.browser.viewport_overlap_px),
+        ),
+        sweep_stats=sweep_stats,
+        user_agent=user_agent,
+    )
+
+    return CaptureResult(tiles=tiles, manifest=manifest_payload)
+
+
+async def _perform_viewport_sweeps(
+    context: BrowserContext,
+    config: CaptureConfig,
+    *,
+    viewport_overlap_px: int,
+    tile_overlap_px: int,
+    settle_ms: int,
+    max_steps: int,
+    mask_selectors: Sequence[str],
+) -> tuple[List[TileSlice], SweepStats, str]:
+    page = await context.new_page()
+    await _mask_automation(page)
+    mask_locators = [page.locator(selector) for selector in mask_selectors]
+
+    await page.goto(config.url, wait_until="networkidle")
+    sweep_count = 0
+    shrink_events = 0
+    tile_index = 0
+    tiles: List[TileSlice] = []
+    viewport_step = max(1, config.viewport_height - viewport_overlap_px)
+
+    scroll_height = await _scroll_height(page)
+    y_offset = 0
+
+    while sweep_count < max_steps:
+        screenshot = await page.screenshot(
+            type="png",
+            full_page=False,
+            animations="disabled",
+            caret="hide",
+            mask=mask_locators if mask_locators else None,
+        )
+        new_tiles = await slice_into_tiles(
+            screenshot,
+            overlap_px=tile_overlap_px,
+            tile_index_offset=tile_index,
+            viewport_y_offset=y_offset,
+        )
+        tiles.extend(new_tiles)
+        tile_index += len(new_tiles)
+        sweep_count += 1
+
+        if y_offset + config.viewport_height >= scroll_height:
+            break
+
+        next_offset = min(
+            y_offset + viewport_step,
+            max(0, scroll_height - config.viewport_height),
+        )
+        if next_offset <= y_offset:
+            break
+
+        await page.evaluate("window.scrollTo(0, arguments[0])", next_offset)
+        await page.wait_for_timeout(settle_ms)
+
+        new_height = await _scroll_height(page)
+        if new_height < scroll_height:
+            shrink_events += 1
+        scroll_height = new_height
+        y_offset = next_offset
+
+    user_agent = await page.evaluate("navigator.userAgent")
+    await page.close()
+
+    stats = SweepStats(
+        sweep_count=sweep_count,
+        total_scroll_height=scroll_height,
+        shrink_events=shrink_events,
+    )
+    return tiles, stats, user_agent
+
+
+async def _launch_browser(playwright, channel: str) -> Browser:
+    LOGGER.debug("launching chromium", extra={"channel": channel})
+    return await playwright.chromium.launch(channel=channel, headless=True)
+
+
+async def _build_context(browser: Browser, config: CaptureConfig) -> BrowserContext:
+    options: dict[str, Any] = {
+        "viewport": {"width": config.viewport_width, "height": config.viewport_height},
+        "device_scale_factor": config.device_scale_factor,
+        "color_scheme": config.color_scheme,
+        "locale": "en-US",
+        "reduced_motion": "reduce" if config.reduced_motion else "no-preference",
+    }
+    return await browser.new_context(**options)
+
+
+async def _mask_automation(page: Page) -> None:
+    await page.add_init_script(
+        """
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined,
+        });
+        """
+    )
+
+
+async def _scroll_height(page: Page) -> int:
+    return await page.evaluate("document.scrollingElement.scrollHeight")
+
+
+def _playwright_version() -> str:
+    try:
+        return metadata.version("playwright")
+    except metadata.PackageNotFoundError:  # pragma: no cover - dev fallback
+        return "unknown"

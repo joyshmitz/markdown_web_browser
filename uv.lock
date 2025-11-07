@@ -1417,10 +1417,13 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-decouple" },
     { name = "pyvips" },
+    { name = "rich" },
     { name = "sqlite-vec" },
     { name = "sqlmodel" },
     { name = "structlog" },
+    { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "zstandard" },
 ]
 
 [package.optional-dependencies]
@@ -1458,12 +1461,15 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.8" },
     { name = "python-decouple", specifier = ">=3.8" },
     { name = "pyvips", specifier = ">=2.2" },
+    { name = "rich", specifier = ">=13.9" },
     { name = "sglang", marker = "extra == 'local-ocr'", specifier = ">=0.3.0" },
     { name = "sqlite-vec", specifier = ">=0.1.1" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "structlog", specifier = ">=24.1" },
+    { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "vllm", marker = "extra == 'local-ocr'", specifier = ">=0.6.0" },
+    { name = "zstandard", specifier = ">=0.23" },
 ]
 provides-extras = ["local-ocr", "observability"]
 

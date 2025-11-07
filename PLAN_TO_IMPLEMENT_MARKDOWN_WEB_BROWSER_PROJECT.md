@@ -164,6 +164,16 @@ Each state carries timestamps, counters (tiles done/total), errors, CfT version,
 
 _2025-11-08 — PurpleDog (bd-rje) is scaffolding the HTMX/Alpine UI + SSE wiring while waiting on capture API metadata from `markdown_web_browser-t82`._
 
+_2025-11-08 — SSE bridge now driven by `web/app.js` EventSource client + `/jobs/demo/stream` manifest events so UI can render live state/progress/runtime/log placeholders before the real `/jobs/{id}/stream` exists._
+
+_2025-11-08 — Demo stream extended with rendered/raw Markdown, artifacts list, and links table events so all tabs can exercise the data contract ahead of bd-3px._
+
+_2025-11-08 — Started bd-ogf scaffolding: `app/dom_links.py` placeholder for DOM harvest + hybrid overlay plus `/jobs/demo/links.json` sample endpoint to unblock Links tab + agent testing._
+
+_2025-11-08 — UI shell can now target arbitrary `/jobs/{id}/stream` endpoints via Job ID selector + EventSource reconnect logic; Links tab also offers a manual refresh that hits `/jobs/{id}/links.json` for testing ahead of real data._
+
+_2025-11-08 — Hardened bd-rje scaffolding: FastAPI now serves `/` + `/static` via absolute paths, artifact list rendering avoids `innerHTML`, and the Run button clearly states that job submission is still stubbed._
+
 ---
 
 ## 6. Error Handling & Resilience
@@ -350,6 +360,9 @@ Observability extras wire FastAPI + Uvicorn/Granian metrics into Prometheus via 
 ---
 
 ## 12. Minimal `.env.example`
+
+_Status 2025-11-08 — BrownStone (bd: markdown_web_browser-37t) added structured settings + manifest schema, synced `.env.example`, and is finishing docs/config + manifest notes before handing ownership back to PurplePond._
+
 ```
 OLMOCR_SERVER=https://ai2endpoints.cirrascale.ai/api
 OLMOCR_API_KEY=sk-***
@@ -395,6 +408,8 @@ Document every new env var inside `docs/config.md` so operators know how CfT pin
 ---
 
 ## 14. Test Plan
+
+_2025-11-08 — PinkCreek (bd-ug0) owning ops/test instrumentation: codifying ruff/ty/Playwright automation + nightly smoke + weekly latency scripts before wiring dashboards and CLI docs._
 
 - **Golden pages:** static docs, sticky headers, SPAs with virtualized lists, huge tables, canvas charts.
 - **Assertions:** headings preserved, no duplicate sections at seams, DOM vs OCR link delta < 10%, tables recognized, provenance comments present.
@@ -462,6 +477,7 @@ Below is a focused, pragmatic list of near-term upgrades. They map to the sectio
 - **Scroll policy revamp.** Use scrollHeight + network-idle stabilization with IntersectionObserver sentinels; retry if SPA shrinks height mid-run.
 
 ### 19.3 Tiling, Image IO, and Compression
+> _Status 2025-11-08 — FuchsiaPond (bd: markdown_web_browser-t82) implemented pyvips-based tiler enforcing 1288 px longest side + 120 px overlap, with SHA256 provenance per tile._
 - Enforce 1288 px longest side (downscale if necessary) and track original DPI/scale.
 - Migrate heavy operations to pyvips, retaining Pillow only for niche formats.
 - Tune PNG encode (Q=9, palette off) and optionally run background `oxipng` to trim caches.
@@ -476,6 +492,8 @@ Below is a focused, pragmatic list of near-term upgrades. They map to the sectio
 - Detect low-confidence OCR regions (symbol rate, low alpha ratio, hyphen density) and patch them with DOM text overlays scoped to the offending block (hero headings, captions, icon fonts).
 
 ### 19.6 Caching, Indexing, Retrieval Quality
+
+> **Progress — 2025-11-08 (BlackPond):** Implementation for bead `markdown_web_browser-9s3` is underway. `app/store.py`, `app/embeddings.py`, `docs/config.md`, and `docs/architecture.md` now track the content-addressed cache layout, sqlite/sqlite-vec schema, manifest contract, and tar bundle export helpers described in this section.
 - Add sqlite-vec section embeddings keyed by `(run_id, section_id, tile_range)` for instant "jump to section" queries.
 - Content-address caches by `(normalized_url, cft_version, viewport, deviceScaleFactor, model_name, model_rev)`.
 - Offer tar.zst bundle downloads of `artifact/`, `out.md`, `links.json`, `manifest.json` using Zstandard.
@@ -496,6 +514,8 @@ Below is a focused, pragmatic list of near-term upgrades. They map to the sectio
 - Retry viewport sweeps when shrinkage detected; record both sweeps in manifest.
 
 ### 19.10 Test Plan Additions
+
+_2025-11-08 — PinkCreek (bd-ug0) threading the new guards into automated runners (ruff/ty, viewport sweep regression, smoke capture) plus nightly/weekly job wiring._
 - CfT pinning test (manifest vs installed binary).
 - Full-page omission regression test using known repro page from Playwright issue tracker.
 - Table split fuzzer for SSIM + header repetition logic.
@@ -528,6 +548,8 @@ References: [1]–[12] (Hugging Face model card, olmOCR paper, Allen AI release 
 
 ## 20. Operational Playbooks & Metrics
 
+_2025-11-08 — PinkCreek (bd-ug0) designing ops automation: smoke/latency job runners, Prometheus/Grafana updates, and release checklists for Sections 20.1-20.4._
+
 ### 20.1 Capture & OCR SLOs
 - **SLO definition:** 99% of jobs finish within 2× the rolling 7-day p95 for that URL category (news, docs, app). Track both capture latency and OCR latency separately.
 - **Error budgets:** Dedicate 25% of weekly engineering time to burn-down whenever error budget drops below 90%; prioritize CfT drift, overlay blocklists, or OCR timeout spikes.
@@ -559,6 +581,8 @@ References: [1]–[12] (Hugging Face model card, olmOCR paper, Allen AI release 
 ---
 
 ## 21. Appendix: Reference Configs & Snippets
+
+_2025-11-08 — PinkCreek (bd-ug0) will refresh Sections 21.4-21.5 once the ops pipelines + CLI sync land so manifests/CLI examples stay in lockstep._
 
 ### 21.1 HTMX SSE Fragment (frontend)
 ```html
@@ -641,6 +665,8 @@ Use these snippets as scaffolding for docs, onboarding, and regression verificat
 ---
 
 ## 22. Production Smoke Set & Latency Tracking
+
+_2025-11-08 — PinkCreek (bd-ug0) spinning up nightly smoke + weekly latency automation and wiring manifests/log storage per this section._
 
 Focus on a curated set of real customer-style URLs instead of synthetic benchmarks. Maintain `benchmarks/production_set.json` listing each URL, category, and target latency.
 
