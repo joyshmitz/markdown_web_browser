@@ -45,6 +45,7 @@ See `PLAN_TO_IMPLEMENT_MARKDOWN_WEB_BROWSER_PROJECT.md` §§2–5, 19 for the fu
 - `diag <job-id>` — print CfT/Playwright metadata, capture/OCR timings, warnings, and blocklist hits for incident triage.
 - `jobs replay manifest <manifest.json>` — resubmit a stored manifest via `/replay` with validation/JSON output support.
 - `jobs embeddings search <job-id> --vector-file vector.json [--top-k 5]` — search sqlite-vec section embeddings for a run (supports inline `--vector` strings and `--json` output).
+- `jobs agents bead-summary <plan.md>` — convert a markdown checklist into bead-ready summaries (mirrors the intra-agent tracker described in PLAN §21).
 - `warnings --count 50` — tail `ops/warnings.jsonl` for capture/blocklist incidents.
 - `dom links --job-id <id>` — render the stored `links.json` (anchors/forms/headings/meta).
 - `jobs ocr-metrics <job-id> [--json]` — summarize OCR batch latency, request IDs, and quota usage from the manifest.
@@ -57,6 +58,7 @@ The CLI reads `API_BASE_URL` + `MDWB_API_KEY` from `.env`; override with `--api-
 - **Transport + viewport:** Defaults (`PLAYWRIGHT_TRANSPORT=cdp`, viewport 1280×2000, DPR 2) live in `app/settings.py` and must align with PLAN §§3, 19.
 - **OCR credentials:** `OLMOCR_SERVER`, `OLMOCR_API_KEY`, and `OLMOCR_MODEL` are required unless you point at `OCR_LOCAL_URL`.
 - **Warning log + blocklist:** Keep `WARNING_LOG_PATH` and `BLOCKLIST_PATH` writable so scroll/overlay incidents are persisted (`docs/config.md` documents every field).
+- **System packages:** Install libvips 8.15+ so the pyvips-based tiler works (`sudo apt-get install libvips` on Debian/Ubuntu). `scripts/run_checks.sh` will fail with `libvips.so` missing errors if the system library isn’t present.
 
 ## Testing & quality gates
 Run these before pushing or shipping capture-facing changes:

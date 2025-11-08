@@ -36,7 +36,7 @@ def _probe(metrics_url: str, timeout: float) -> None:
         response.raise_for_status()
 
 
-@cli.command("run")
+@cli.command()
 def run_check(
     api_base: str | None = typer.Option(
         None,

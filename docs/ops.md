@@ -130,7 +130,7 @@ the workflows converge.
 - Quick smoke check:
 
 ```
-uv run python scripts/check_metrics.py run --timeout 3.0
+uv run python scripts/check_metrics.py --timeout 3.0
 curl -s http://localhost:8000/metrics | grep mdwb_capture_duration_seconds
 curl -s http://localhost:9000/metrics | head -n 5  # dedicated Prom port
 ```

@@ -489,34 +489,34 @@ def fetch(
     if webhook_event and not webhook_url:
         raise typer.BadParameter("Use --webhook-event together with --webhook-url.", param_hint="--webhook-event")
 
-    settings = _resolve_settings(api_base)
-    client = _client(settings, http2=http2)
-    payload: dict[str, object] = {"url": url}
-    if profile:
-        payload["profile_id"] = profile
-    if ocr_policy:
-        payload["ocr"] = {"policy": ocr_policy}
-
     hook_map = {}
     if on_event:
         hook_map = _parse_event_hooks(on_event)
         if not watch:
             raise typer.BadParameter("--on requires --watch so hooks have events to monitor.", param_hint="--on")
 
-    response = client.post("/jobs", json=payload)
-    response.raise_for_status()
-    job = response.json()
-    console.print(f"[green]Created job {job.get('id')}[/]")
-    _print_job(job)
+    settings = _resolve_settings(api_base)
+    with _client_ctx(settings, http2=http2) as client:
+        payload: dict[str, object] = {"url": url}
+        if profile:
+            payload["profile_id"] = profile
+        if ocr_policy:
+            payload["ocr"] = {"policy": ocr_policy}
 
-    job_id = job.get("id")
-    if job_id and webhook_url:
-        _register_webhooks_for_job(
-            client,
-            job_id,
-            urls=webhook_url,
-            events=webhook_event,
-        )
+        response = client.post("/jobs", json=payload)
+        response.raise_for_status()
+        job = response.json()
+        console.print(f"[green]Created job {job.get('id')}[/]")
+        _print_job(job)
+
+        job_id = job.get("id")
+        if job_id and webhook_url:
+            _register_webhooks_for_job(
+                client,
+                job_id,
+                urls=webhook_url,
+                events=webhook_event,
+            )
 
     if watch and job_id:
         console.rule(f"Streaming {job_id}")
@@ -552,13 +552,10 @@ def show(
 
 
 def _fetch_job_snapshot(job_id: str, settings: APISettings, *, http2: bool = True) -> dict[str, Any]:
-    client = _client(settings, http2=http2)
-    try:
+    with _client_ctx(settings, http2=http2) as client:
         response = client.get(f"/jobs/{job_id}")
         response.raise_for_status()
         return response.json()
-    finally:
-        client.close()
 
 
 @cli.command()
@@ -582,25 +579,25 @@ def diag(
     """Print manifest/environment details for a job."""
 
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get(f"/jobs/{job_id}")
-    if response.status_code == 404:
-        detail = _extract_detail(response) or f"Job {job_id} not found."
-        console.print(f"[red]{detail}[/]")
-        raise typer.Exit(1)
-    response.raise_for_status()
-    snapshot = response.json()
+    with _client_ctx(settings) as client:
+        response = client.get(f"/jobs/{job_id}")
+        if response.status_code == 404:
+            detail = _extract_detail(response) or f"Job {job_id} not found."
+            console.print(f"[red]{detail}[/]")
+            raise typer.Exit(1)
+        response.raise_for_status()
+        snapshot = response.json()
 
-    manifest = snapshot.get("manifest")
-    manifest_source = "snapshot"
-    manifest_error: str | None = None
-    if not manifest:
-        manifest_response = client.get(f"/jobs/{job_id}/manifest.json")
-        if manifest_response.status_code < 400:
-            manifest = manifest_response.json()
-            manifest_source = "manifest.json"
-        else:
-            manifest_error = _extract_detail(manifest_response) or "Manifest unavailable"
+        manifest = snapshot.get("manifest")
+        manifest_source = "snapshot"
+        manifest_error: str | None = None
+        if not manifest:
+            manifest_response = client.get(f"/jobs/{job_id}/manifest.json")
+            if manifest_response.status_code < 400:
+                manifest = manifest_response.json()
+                manifest_source = "manifest.json"
+            else:
+                manifest_error = _extract_detail(manifest_response) or "Manifest unavailable"
 
     payload = {
         "snapshot": snapshot,
@@ -668,10 +665,10 @@ def demo_snapshot(
     """Fetch the demo job snapshot from /jobs/demo."""
 
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get("/jobs/demo")
-    response.raise_for_status()
-    data = response.json()
+    with _client_ctx(settings) as client:
+        response = client.get("/jobs/demo")
+        response.raise_for_status()
+        data = response.json()
     if json_output:
         console.print_json(data=data)
     else:
@@ -688,10 +685,10 @@ def demo_links(
     """Fetch the demo links JSON."""
 
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get("/jobs/demo/links.json")
-    response.raise_for_status()
-    data = response.json()
+    with _client_ctx(settings) as client:
+        response = client.get("/jobs/demo/links.json")
+        response.raise_for_status()
+        data = response.json()
     if json_output:
         console.print_json(data=data)
     else:
@@ -797,14 +794,14 @@ def _write_binary_output(content: bytes, path: str | None, *, description: str) 
 
 def _download_bundle(job_id: str, api_base: Optional[str], out: Optional[str]) -> None:
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get(f"/jobs/{job_id}/artifact/bundle.tar.zst")
-    if response.status_code == 404:
-        console.print(f"[red]Job {job_id} or bundle not found.[/]")
-        raise typer.Exit(code=1)
-    response.raise_for_status()
-    target = out or f"{job_id}-bundle.tar.zst"
-    _write_binary_output(response.content, target, description="bundle")
+    with _client_ctx(settings) as client:
+        response = client.get(f"/jobs/{job_id}/artifact/bundle.tar.zst")
+        if response.status_code == 404:
+            console.print(f"[red]Job {job_id} or bundle not found.[/]")
+            raise typer.Exit(code=1)
+        response.raise_for_status()
+        target = out or f"{job_id}-bundle.tar.zst"
+        _write_binary_output(response.content, target, description="bundle")
 
 
 def _register_webhooks_for_job(
@@ -1285,18 +1282,18 @@ def jobs_manifest(
     pretty: bool = typer.Option(True, "--pretty/--raw", help="Pretty-print JSON before writing."),
 ) -> None:
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get(f"/jobs/{job_id}/manifest.json")
-    if response.status_code == 404:
-        console.print(f"[red]Job {job_id} not found.[/]")
-        raise typer.Exit(code=1)
-    response.raise_for_status()
-    text = response.text
-    if pretty:
-        parsed = _parse_json_payload(text)
-        if parsed is not None:
-            text = json.dumps(parsed, indent=2)
-    _write_text_output(text, out, description="manifest")
+    with _client_ctx(settings) as client:
+        response = client.get(f"/jobs/{job_id}/manifest.json")
+        if response.status_code == 404:
+            console.print(f"[red]Job {job_id} not found.[/]")
+            raise typer.Exit(code=1)
+        response.raise_for_status()
+        text = response.text
+        if pretty:
+            parsed = _parse_json_payload(text)
+            if parsed is not None:
+                text = json.dumps(parsed, indent=2)
+        _write_text_output(text, out, description="manifest")
 
 
 @jobs_artifacts_cli.command("markdown")
@@ -1306,13 +1303,13 @@ def jobs_markdown(
     out: Optional[str] = typer.Option(None, "--out", help="Write markdown to this path"),
 ) -> None:
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get(f"/jobs/{job_id}/result.md")
-    if response.status_code == 404:
-        console.print(f"[red]Job {job_id} not found.[/]")
-        raise typer.Exit(code=1)
-    response.raise_for_status()
-    _write_text_output(response.text, out, description="markdown")
+    with _client_ctx(settings) as client:
+        response = client.get(f"/jobs/{job_id}/result.md")
+        if response.status_code == 404:
+            console.print(f"[red]Job {job_id} not found.[/]")
+            raise typer.Exit(code=1)
+        response.raise_for_status()
+        _write_text_output(response.text, out, description="markdown")
 
 
 @jobs_artifacts_cli.command("links")
@@ -1323,18 +1320,18 @@ def jobs_links(
     pretty: bool = typer.Option(True, "--pretty/--raw", help="Pretty-print JSON before writing."),
 ) -> None:
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get(f"/jobs/{job_id}/links.json")
-    if response.status_code == 404:
-        console.print(f"[red]Job {job_id} not found.[/]")
-        raise typer.Exit(code=1)
-    response.raise_for_status()
-    text = response.text
-    if pretty:
-        parsed = _parse_json_payload(text)
-        if parsed is not None:
-            text = json.dumps(parsed, indent=2)
-    _write_text_output(text, out, description="links")
+    with _client_ctx(settings) as client:
+        response = client.get(f"/jobs/{job_id}/links.json")
+        if response.status_code == 404:
+            console.print(f"[red]Job {job_id} not found.[/]")
+            raise typer.Exit(code=1)
+        response.raise_for_status()
+        text = response.text
+        if pretty:
+            parsed = _parse_json_payload(text)
+            if parsed is not None:
+                text = json.dumps(parsed, indent=2)
+        _write_text_output(text, out, description="links")
 
 
 @jobs_artifacts_cli.command("bundle")
@@ -1403,17 +1400,17 @@ def jobs_replay_manifest(
         raise typer.BadParameter(f"Manifest is not valid JSON ({exc})", param_hint="manifest_path") from exc
 
     settings = _resolve_settings(api_base)
-    client = _client(settings, http2=http2)
-    response = client.post("/replay", json={"manifest": manifest_payload})
-    if response.status_code >= 400:
-        detail = _extract_detail(response) or response.text or f"HTTP {response.status_code}"
-        if json_output:
-            console.print_json(data={"status": "error", "detail": detail})
-        else:
-            console.print(f"[red]Replay failed:[/] {detail}")
-        raise typer.Exit(1)
+    with _client_ctx(settings, http2=http2) as client:
+        response = client.post("/replay", json={"manifest": manifest_payload})
+        if response.status_code >= 400:
+            detail = _extract_detail(response) or response.text or f"HTTP {response.status_code}"
+            if json_output:
+                console.print_json(data={"status": "error", "detail": detail})
+            else:
+                console.print(f"[red]Replay failed:[/] {detail}")
+            raise typer.Exit(1)
 
-    job = response.json()
+        job = response.json()
     if json_output:
         console.print_json(data={"status": "ok", "job": job})
         return
@@ -1449,16 +1446,16 @@ def jobs_embeddings_search(
         raise typer.BadParameter("top-k must be at least 1", param_hint="--top-k")
 
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.post(
-        f"/jobs/{job_id}/embeddings/search",
-        json={"vector": vector_values, "top_k": top_k},
-    )
-    if response.status_code >= 400:
-        detail = _extract_detail(response) or response.text or f"HTTP {response.status_code}"
-        console.print(f"[red]Embeddings search failed:[/] {detail}")
-        raise typer.Exit(1)
-    data = response.json()
+    with _client_ctx(settings) as client:
+        response = client.post(
+            f"/jobs/{job_id}/embeddings/search",
+            json={"vector": vector_values, "top_k": top_k},
+        )
+        if response.status_code >= 400:
+            detail = _extract_detail(response) or response.text or f"HTTP {response.status_code}"
+            console.print(f"[red]Embeddings search failed:[/] {detail}")
+            raise typer.Exit(1)
+        data = response.json()
     if json_output:
         console.print_json(data=data)
         return

@@ -198,7 +198,7 @@ _2025-11-08 — BrownStone (bd-dm9) introduced JSON-backed selector blocklist + 
 - Scroll shrink / poor overlap → capture now emits `scroll-shrink` and `overlap-low` warnings whenever viewport sweeps retry due to shrinking SPAs or overlap match ratios fall below the configured threshold (defaults: 1 shrink event, 0.65 ratio). _2025-11-08 — BrownStone (bd-dm9)._
 _2025-11-08 — WhiteSnow (bd-dm9) added sweep stats + `validation_failures` to CaptureManifest and the ops warning log so retries and duplicate seams show up even when no DOM warnings fire._
 _2025-11-08 — WhiteSnow (bd-dm9) updated the web UI manifest tab to render blocklist hits, sweep stats, and validation failures, and the SSE event feed now emits dedicated blocklist/sweep/validation events so the Events tab/CLI watchers stay in sync._
-_2025-11-08 — LilacSnow (bd-dm9) synced the public `ManifestMetadata` schema/docs/tests with the capture dataclass so sweep stats, overlap ratios, and validation failures flow through APIs, CLI output, and manifests without ad-hoc parsing._
+_2025-11-08 — LilacSnow (bd-dm9) synced the public `ManifestMetadata` schema/docs/tests with the capture dataclass so sweep stats, overlap ratios, and validation failures flow through APIs, CLI output, and manifests without ad-hoc parsing, and persisted those fields to SQLite via RunRecord so dashboards can consume them._
 - Server overload → adaptive OCR concurrency, queue visibility, remote/local failover.
 - Partial results → stream partial Markdown as tiles finish; mark sections as incomplete with provenance comments.
 - Full-page retries → viewport sweep restarts when shrink detected; record both sweeps.

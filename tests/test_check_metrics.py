@@ -30,7 +30,6 @@ def test_run_check_probes_primary_and_exporter(monkeypatch):
     result = runner.invoke(
         check_metrics.cli,
         [
-            "run",
             "--timeout",
             "1.0",
         ],
@@ -41,17 +40,13 @@ def test_run_check_probes_primary_and_exporter(monkeypatch):
 
 
 def test_run_check_reports_failures(monkeypatch):
-    sequence = iter([None, RuntimeError("boom")])
-
     def fake_probe(url: str, timeout: float) -> None:  # noqa: ANN001
-        exc = next(sequence, None)
-        if isinstance(exc, Exception):
-            raise exc
+        raise RuntimeError("boom")
 
     monkeypatch.setattr(check_metrics, "_probe", fake_probe)
     monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9000}))
 
-    result = runner.invoke(check_metrics.cli, ["run", "--no-include-exporter"])
+    result = runner.invoke(check_metrics.cli, ["--no-include-exporter"])
 
     assert result.exit_code == 1
     assert "[FAIL] http://api/metrics" in result.output

@@ -76,8 +76,10 @@ guarded hyphenation, table seam rules)
   run lives under `{CACHE_ROOT}/{host}/{path_slug}/{yyyy-mm-dd_HHMMSS}/` with
   deterministic `manifest.json`, `out.md`, `links.json`, and `artifact/` children.
 - **SQLite metadata (`RUNS_DB_PATH`)** — `RunRecord`/`LinkRecord` tables capture CfT
-  label/build, screenshot style hash, OCR policy, concurrency window, and timing
-  metrics for dashboards. The `section_embeddings` virtual table (sqlite-vec) stores
+  label/build, screenshot style hash, OCR policy, concurrency window, timing metrics,
+  plus capture breadcrumbs (shrink/retry counts, overlap ratios, validation failure counts)
+  so dashboards can surface seam health without scraping manifests. The `section_embeddings`
+  virtual table (sqlite-vec) stores
   1536-dim vectors keyed by `(run_id, section_id, tile_start, tile_end)` so agents can
   jump directly to relevant Markdown spans via `Store.search_section_embeddings()` and
   the `/jobs/{id}/embeddings/search` API.
