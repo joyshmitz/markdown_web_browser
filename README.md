@@ -37,12 +37,12 @@ See `PLAN_TO_IMPLEMENT_MARKDOWN_WEB_BROWSER_PROJECT.md` §§2–5, 19 for the fu
    - CLI example: `uv run python scripts/mdwb_cli.py fetch https://example.com --watch`
 
 ## CLI cheatsheet (`scripts/mdwb_cli.py`)
-- `fetch <url> [--watch]` — enqueue + optionally stream Markdown as tiles finish (percent/ETA shown unless `--no-progress`).
+- `fetch <url> [--watch]` — enqueue + optionally stream Markdown as tiles finish (percent/ETA shown unless `--no-progress`; add `--reuse-session` to keep one HTTP/2 client alive across submit + stream).
 - `fetch <url> --resume [--resume-root path]` — skip URLs already recorded in `done_flags/` (optionally `work_index_list.csv.zst`) under the chosen root; the CLI auto-enables `--watch` so completed jobs write their flag/index entries. Override locations via `--resume-index/--resume-done-dir`.
 - `fetch <url> --webhook-url https://... [--webhook-event DONE --webhook-event FAILED]` — register callbacks right after the job is created.
 - `show <job-id> [--ocr-metrics]` — dump the latest job snapshot, optionally with OCR batch/quota telemetry.
 - `stream <job-id>` — follow the SSE feed.
-- `watch <job-id>` / `events <job-id> --follow --since <ISO>` — tail the `/jobs/{id}/events` NDJSON log (use `--on EVENT=COMMAND` for hooks; add `--no-progress` to suppress the percent/ETA overlay).
+- `watch <job-id>` / `events <job-id> --follow --since <ISO>` — tail the `/jobs/{id}/events` NDJSON log (use `--on EVENT=COMMAND` for hooks; add `--no-progress` to suppress the percent/ETA overlay, `--reuse-session` to keep a single HTTP client).
 - `diag <job-id>` — print CfT/Playwright metadata, capture/OCR timings, warnings, and blocklist hits for incident triage.
 - `jobs replay manifest <manifest.json>` — resubmit a stored manifest via `/replay` with validation/JSON output support.
 - `jobs embeddings search <job-id> --vector-file vector.json [--top-k 5]` — search sqlite-vec section embeddings for a run (supports inline `--vector` strings and `--json` output).
@@ -50,16 +50,16 @@ See `PLAN_TO_IMPLEMENT_MARKDOWN_WEB_BROWSER_PROJECT.md` §§2–5, 19 for the fu
 - `warnings --count 50` — tail `ops/warnings.jsonl` for capture/blocklist incidents.
 - `dom links --job-id <id>` — render the stored `links.json` (anchors/forms/headings/meta).
 - `jobs ocr-metrics <job-id> [--json]` — summarize OCR batch latency, request IDs, and quota usage from the manifest.
-- `resume status --root path [--limit 10 --json]` — inspect the resume state (done flags + optional work_index) that powers `fetch --resume`.
+- `resume status --root path [--limit 10 --pending --json]` — inspect the resume state; `--pending` shows outstanding URLs, `--json` emits `completed_entries` + `pending_entries` for automation.
 - `demo snapshot|stream|events` — exercise the demo endpoints without hitting a live pipeline.
 
 The CLI reads `API_BASE_URL` + `MDWB_API_KEY` from `.env`; override with `--api-base` when targeting staging. For CUDA/vLLM workflows, see `docs/olmocr_cli_tool_documentation.md` and `docs/olmocr_cli_integration.md` for detailed setup + merge notes.
 
 ## Agent starter scripts (`scripts/agents/`)
-- `uv run python -m scripts.agents.summarize_article summarize --url https://example.com` — submit (or reuse via `--job-id`) and print a short summary of the captured Markdown.
-- `uv run python -m scripts.agents.generate_todos todos --job-id <id> [--json]` — extract TODO-style bullets from a finished job; accepts `--url` to run a fresh capture.
+- `uv run python -m scripts.agents.summarize_article summarize --url https://example.com [--out summary.txt]` — submit (or reuse via `--job-id`) and print/save a short summary (defaults to `--reuse-session`).
+- `uv run python -m scripts.agents.generate_todos todos --job-id <id> [--json] [--out todos.json]` — extract TODO-style bullets (JSON when `--json`, newline text otherwise); accepts `--url` to run a fresh capture and also defaults to `--reuse-session`.
 
-Both helpers reuse the CLI’s auth + HTTP plumbing, accept the same `--api-base/--http2` flags, and fall back to existing jobs when you only need post-processing.
+Both helpers reuse the CLI’s auth + HTTP plumbing, accept the same `--api-base/--http2` flags, fall back to existing jobs when you only need post-processing, and now support `--out` so automations can ingest the results directly.
 
 ## Prerequisites & environment
 - **Chrome for Testing pin:** Set `CFT_VERSION` + `CFT_LABEL` in `.env` so manifests and ops dashboards stay consistent. Re-run `playwright install` whenever the label/build changes.
@@ -82,7 +82,13 @@ if you need to invoke the Node-based runner; otherwise the script attempts `uv r
 prints a warning when the bundled Python CLI lacks the `test` command. When you already know libvips isn’t
 available in a minimal container, export `SKIP_LIBVIPS_CHECK=1` to bypass the preflight warning. Set
 `MDWB_CHECK_METRICS=1` (optionally `CHECK_METRICS_TIMEOUT=<seconds>`) to append the Prometheus health check
-(`scripts/check_metrics.py --timeout … --json`) after the pytest/Playwright stack.
+(`scripts/check_metrics.py --timeout … --json`) after the pytest/Playwright stack. When you want to run the
+rich CLI E2E suite locally/CI, set `MDWB_RUN_E2E=1` to have `run_checks.sh` execute `tests/test_e2e_cli.py`
+after the standard subset; the run emits FlowLogger tables so grab the `run_checks` log in CI for postmortems.
+
+- Every `run_checks` invocation now emits `tmp/pytest_report.xml` and `tmp/pytest_summary.json`
+  (override with `PYTEST_JUNIT_PATH`/`PYTEST_SUMMARY_PATH`). The JSON digest lists totals and the first few
+  failing test names, so CI/Agent Mail can quote failures without re-running pytest.
 
 Also run `uv run python scripts/check_env.py` whenever `.env` changes—CI and nightly smokes depend on it to confirm CfT pins + OCR secrets.
 
@@ -104,8 +110,8 @@ Additional expectations (per PLAN §§14, 19.10, 22):
 - `scripts/olmocr_cli.py` + `docs/olmocr_cli.md` — hosted olmOCR orchestration/diagnostics.
 - `mdwb jobs replay manifest <manifest.json>` — re-run a job with a stored manifest via `POST /replay` (accepts `--api-base`, `--http2`, `--json`); keep `scripts/replay_job.sh` around for legacy automation until everything points at the CLI.
 - `mdwb jobs show <job-id>` — inspect the latest snapshot plus sweep stats/validation issues in one table (look for the new “sweep”/“validation” rows when diagnosing seam problems).
-- `scripts/update_smoke_pointers.py <run-dir> --root benchmarks/production` — refresh `latest_summary.md`, `latest_manifest_index.json`, and `latest_metrics.json` after ad-hoc smoke runs so dashboards point at the right data (add `--weekly-source` when overriding the rolling summary).
-- `scripts/check_metrics.py` — ping `/metrics` plus the exporter; supports `--api-base`, `--exporter-url`, and `--json` for structured output (`status`, `generated_at`, per-target success/failure counts). `scripts/prom_scrape_check.py` remains as a compatibility wrapper but simply re-exports the same Typer CLI.
+- `scripts/update_smoke_pointers.py <run-dir> [--root path]` — refresh `latest_summary.md`, `latest_manifest_index.json`, and `latest_metrics.json` after ad-hoc smoke runs so dashboards point at the right data (defaults to `MDWB_SMOKE_ROOT` unless `--root` is provided; add `--weekly-source` when overriding the rolling summary).
+- `scripts/check_metrics.py` — ping `/metrics` plus the exporter; supports `--api-base`, `--exporter-url`, and `--json` for structured output (`status`, `generated_at`, `total_duration_ms`, per-target success/failure + `duration_ms`). `scripts/prom_scrape_check.py` remains as a compatibility wrapper but simply re-exports the same Typer CLI.
 - Prometheus metrics now cover capture/OCR/stitch durations, warning/blocklist counts, job completions, and SSE heartbeats via `prometheus-fastapi-instrumentator`. Scrape `/metrics` on the API port or hit the background exporter on `PROMETHEUS_PORT` (default 9000); docs/ops.md lists the metric names + alert hooks.
 - Set `MDWB_CHECK_METRICS=1` (optionally `CHECK_METRICS_TIMEOUT=<seconds>`) when running `scripts/run_checks.sh` to include the Prometheus smoke (`scripts/check_metrics.py`) alongside the usual lint/type/pytest/Playwright stack.
 

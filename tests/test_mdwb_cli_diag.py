@@ -38,6 +38,9 @@ class StubClient:
             raise KeyError(f"unexpected path {path}")
         return response
 
+    def close(self) -> None:  # pragma: no cover - simple stub
+        return None
+
 
 def _fake_settings():
     return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
@@ -45,7 +48,7 @@ def _fake_settings():
 
 def _patch_client_ctx(monkeypatch, stub):
     @contextmanager
-    def fake_ctx(settings, http2=True):  # noqa: ANN001
+    def fake_ctx(settings, http2=True, **kwargs):  # noqa: ANN001
         yield stub
 
     monkeypatch.setattr(mdwb_cli, "_client_ctx", fake_ctx)
@@ -107,3 +110,25 @@ def test_diag_handles_missing_job(monkeypatch):
 
     assert result.exit_code == 1
     assert "not found" in result.output.lower()
+
+
+def test_diag_reports_manifest_error(monkeypatch):
+    snapshot = {"id": "job789", "url": "https://example.com/error", "state": "DONE", "progress": {"done": 1, "total": 1}}
+    stub = StubClient(
+        {
+            "/jobs/job789": StubResponse(200, payload=snapshot),
+            "/jobs/job789/manifest.json": StubResponse(500, payload={"detail": "manifest-deleted"}),
+        }
+    )
+    _patch_client_ctx(monkeypatch, stub)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
+
+    with mdwb_cli.console.capture() as capture:
+        result = runner.invoke(mdwb_cli.cli, ["diag", "job789"])
+
+    output = capture.get()
+
+    assert result.exit_code == 0
+    assert "/jobs/job789/manifest.json" in stub.calls
+    assert "Manifest Error" in output
+    assert "manifest-deleted" in output

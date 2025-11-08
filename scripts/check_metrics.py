@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,21 +33,26 @@ def _default_exporter_port(cfg: DecoupleConfig) -> int:
     return cfg("PROMETHEUS_PORT", cast=int, default=9000)
 
 
-def _probe(metrics_url: str, timeout: float) -> None:
+def _probe(metrics_url: str, timeout: float) -> float:
+    start = time.perf_counter()
     with httpx.Client(timeout=timeout) as client:
         response = client.get(metrics_url)
         response.raise_for_status()
+    end = time.perf_counter()
+    return (end - start) * 1000.0
 
 
 def _build_summary(results: list[dict[str, object]]) -> dict[str, object]:
     ok_count = sum(1 for row in results if row.get("ok"))
     fail_count = len(results) - ok_count
     status = "ok" if fail_count == 0 else "error"
+    total_duration = sum(row.get("duration_ms", 0.0) or 0.0 for row in results)
     return {
         "status": status,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "ok_count": ok_count,
         "failed_count": fail_count,
+        "total_duration_ms": total_duration,
         "targets": results,
     }
 
@@ -98,10 +104,10 @@ def run_check(
     results: list[dict[str, object]] = []
     for url in targets:
         try:
-            _probe(url, timeout)
-            results.append({"url": url, "ok": True})
+            duration_ms = _probe(url, timeout)
+            results.append({"url": url, "ok": True, "duration_ms": duration_ms})
             if not json_output:
-                typer.echo(f"[OK] {url}")
+                typer.echo(f"[OK] {url} ({duration_ms:.1f} ms)")
         except Exception as exc:  # noqa: BLE001
             message = f"[FAIL] {url}: {exc}"
             errors.append(message)

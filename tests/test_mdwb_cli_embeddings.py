@@ -31,6 +31,9 @@ class StubClient:
         self.calls.append((path, json or {}))
         return self.response
 
+    def close(self) -> None:  # pragma: no cover - simple stub
+        return None
+
 
 def _fake_settings():
     return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
@@ -38,7 +41,7 @@ def _fake_settings():
 
 def _patch_client_ctx(monkeypatch, stub):
     @contextmanager
-    def fake_ctx(settings, http2=True):  # noqa: ANN001
+    def fake_ctx(settings, http2=True, **kwargs):  # noqa: ANN001
         yield stub
 
     monkeypatch.setattr(mdwb_cli, "_client_ctx", fake_ctx)

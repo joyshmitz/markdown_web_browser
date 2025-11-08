@@ -11,11 +11,11 @@ import os
 import subprocess
 import time
 from collections import deque
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Mapping, Optional, TextIO, Tuple
+from typing import Any, Callable, ContextManager, Iterable, Iterator, Mapping, Optional, TextIO, Tuple
 
 import httpx
 import typer
@@ -108,18 +108,33 @@ def _client(
     )
 
 
-@contextmanager
 def _client_ctx(
     settings: APISettings,
     *,
     http2: bool = True,
     timeout: httpx.Timeout | float | None | object = _DEFAULT_TIMEOUT,
-) -> Iterator[httpx.Client]:
-    client = _client(settings, http2=http2, timeout=timeout)
-    try:
-        yield client
-    finally:
-        client.close()
+) -> ContextManager[httpx.Client]:
+    @contextmanager
+    def _ctx() -> Iterator[httpx.Client]:
+        client = _client(settings, http2=http2, timeout=timeout)
+        try:
+            yield client
+        finally:
+            client.close()
+
+    return _ctx()
+
+
+def _client_ctx_or_shared(
+    shared: httpx.Client | None,
+    settings: APISettings,
+    *,
+    http2: bool = True,
+    timeout: httpx.Timeout | float | None | object = _DEFAULT_TIMEOUT,
+) -> ContextManager[httpx.Client]:
+    if shared is not None:
+        return nullcontext(shared)
+    return _client_ctx(settings, http2=http2, timeout=timeout)
 
 
 def _resume_hash(identifier: str) -> str:
@@ -151,9 +166,13 @@ class ResumeManager:
         done = sum(len(mapping.get(h, ())) for h in done_hashes if h in mapping)
         missing = len([h for h in done_hashes if h not in mapping])
         done += missing
+        total += missing
         return done, total
 
     def list_entries(self, limit: Optional[int] = None) -> list[str]:
+        return self.list_completed_entries(limit)
+
+    def list_completed_entries(self, limit: Optional[int] = None) -> list[str]:
         mapping = self._load_index()
         done_hashes = self._done_hashes()
         if mapping:
@@ -169,6 +188,22 @@ class ResumeManager:
         if limit is not None and limit > 0:
             return all_entries[:limit]
         return all_entries
+
+    def list_pending_entries(self, limit: Optional[int] = None) -> list[str]:
+        mapping = self._load_index()
+        if not mapping:
+            return []
+        done_hashes = self._done_hashes()
+        pending: list[str] = []
+        for group_hash in sorted(mapping.keys()):
+            if group_hash in done_hashes:
+                continue
+            pending.extend(sorted(mapping[group_hash]))
+            if limit is not None and limit > 0 and len(pending) >= limit:
+                return pending[:limit]
+        if limit is not None and limit > 0:
+            return pending[:limit]
+        return pending
 
     def is_complete(self, entry: str) -> bool:
         group_hash = _resume_hash(entry)
@@ -301,21 +336,39 @@ def _format_duration_short(seconds: float) -> str:
 def resume_status(
     root: Path = typer.Option(Path("."), "--root", "-r", help="Resume root containing done_flags/work_index."),
     limit: int = typer.Option(10, min=0, help="Maximum entries to display (0 = unlimited)."),
+    pending: bool = typer.Option(False, "--pending/--no-pending", help="Also list pending entries (from work_index)."),
     json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON instead of tables."),
 ) -> None:
     """Inspect the completion state tracked by --resume."""
 
-    manager = ResumeManager(root.resolve())
+    root = root.resolve()
+    manager = ResumeManager(root)
+    orphan_flags = sorted(
+        hash_value
+        for hash_value in manager._done_hashes()
+        if hash_value not in (manager._load_index() or {})
+    )
+    if orphan_flags:
+        review_dir = root / "done_flags_review"
+        review_dir.mkdir(parents=True, exist_ok=True)
+        for hash_value in orphan_flags:
+            flag_path = manager.done_dir / f"done_{hash_value}.flag"
+            marker = review_dir / f"{hash_value}.flag"
+            if flag_path.exists() and not marker.exists():
+                marker.write_text(flag_path.read_text(), encoding="utf-8")
     done, total = manager.status()
     entry_limit = None if limit == 0 else limit
-    entries = manager.list_entries(entry_limit)
+    completed_entries = manager.list_completed_entries(entry_limit)
+    pending_entries = manager.list_pending_entries(entry_limit) if pending or json_output else []
     data = {
         "root": str(manager.root),
         "done_dir": str(manager.done_dir),
         "index_path": str(manager.index_path),
         "done": done,
         "total": total,
-        "entries": entries,
+        "entries": completed_entries,
+        "completed_entries": completed_entries,
+        "pending_entries": pending_entries,
     }
     if json_output:
         console.print_json(data=data)
@@ -328,12 +381,25 @@ def resume_status(
     table.add_row("Completed", str(done))
     table.add_row("Total", "?" if total is None else str(total))
     console.print(table)
-    if entries:
-        console.print(f"Showing {len(entries)} entr{'y' if len(entries)==1 else 'ies'} (limit={'all' if entry_limit is None else entry_limit}):")
-        for entry in entries:
+    if completed_entries:
+        console.print(
+            f"Completed entries ({len(completed_entries)})"
+            f" (limit={'all' if entry_limit is None else entry_limit}):"
+        )
+        for entry in completed_entries:
             console.print(f"- {entry}")
     else:
         console.print("[dim]No resume entries recorded yet.[/]")
+    if pending:
+        if pending_entries:
+            console.print(
+                f"Pending entries ({len(pending_entries)})"
+                f" (limit={'all' if entry_limit is None else entry_limit}):"
+            )
+            for entry in pending_entries:
+                console.print(f"- {entry}")
+        else:
+            console.print("[dim]No pending entries recorded (index required).[/]")
 
 
 def _print_job(job: dict) -> None:
@@ -512,6 +578,14 @@ def _trigger_event_hooks(entry: Mapping[str, Any], hooks: Optional[dict[str, lis
             state = snapshot.get("state")
             if isinstance(state, str):
                 commands.extend(hooks.get(f"state:{state}", []))
+    elif event_name == "state":
+        payload = entry.get("payload")
+        if isinstance(payload, str) and payload:
+            commands.extend(hooks.get(f"state:{payload}", []))
+        elif isinstance(payload, Mapping):
+            state = payload.get("state")
+            if isinstance(state, str):
+                commands.extend(hooks.get(f"state:{state}", []))
 
     commands.extend(hooks.get("*", []))
 
@@ -561,9 +635,10 @@ def _stream_job(
     hooks: Optional[dict[str, list[str]]] = None,
     on_terminal: Optional[Callable[[str, dict[str, Any] | None], None]] = None,
     progress_meter: _ProgressMeter | None = None,
+    client: httpx.Client | None = None,
 ) -> None:
-    with _client_ctx(settings, timeout=None) as client:
-        with client.stream("GET", f"/jobs/{job_id}/stream") as response:
+    with _client_ctx_or_shared(client, settings, timeout=None) as active_client:
+        with active_client.stream("GET", f"/jobs/{job_id}/stream") as response:
             response.raise_for_status()
             for event, payload in _iter_sse(response):
                 if raw:
@@ -597,13 +672,14 @@ def _iter_event_lines(
     cursor: str | None,
     follow: bool,
     interval: float,
+    client: httpx.Client | None = None,
 ):
-    with _client_ctx(settings) as client:
+    with (nullcontext(client) if client is not None else _client_ctx(settings)) as active_client:
         while True:
             params: dict[str, str] = {}
             if cursor:
                 params["since"] = cursor
-            with client.stream("GET", f"/jobs/{job_id}/events", params=params) as response:
+            with active_client.stream("GET", f"/jobs/{job_id}/events", params=params) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
                     if not line:
@@ -623,8 +699,16 @@ def _watch_job_events(
     follow: bool,
     interval: float,
     output: TextIO,
+    client: httpx.Client | None = None,
 ) -> None:
-    for line in _iter_event_lines(job_id, settings, cursor=cursor, follow=follow, interval=interval):
+    for line in _iter_event_lines(
+        job_id,
+        settings,
+        cursor=cursor,
+        follow=follow,
+        interval=interval,
+        client=client,
+    ):
         output.write(line + "\n")
         output.flush()
 
@@ -638,11 +722,19 @@ def _watch_job_events_pretty(
     interval: float,
     raw: bool,
     hooks: Optional[dict[str, list[str]]] = None,
+    client: httpx.Client | None = None,
     progress_meter: _ProgressMeter | None = None,
     on_terminal: Optional[Callable[[str, dict[str, Any] | None], None]] = None,
 ) -> None:
     terminal_states = {"DONE", "FAILED"}
-    for line in _iter_event_lines(job_id, settings, cursor=cursor, follow=follow, interval=interval):
+    for line in _iter_event_lines(
+        job_id,
+        settings,
+        cursor=cursor,
+        follow=follow,
+        interval=interval,
+        client=client,
+    ):
         if raw:
             console.print(line)
             continue
@@ -675,6 +767,7 @@ def _watch_events_with_fallback(
     hooks: Optional[dict[str, list[str]]] = None,
     on_terminal: Optional[Callable[[str, dict[str, Any] | None], None]] = None,
     progress_meter: _ProgressMeter | None = None,
+    client: httpx.Client | None = None,
 ) -> None:
     """Stream `/jobs/{id}/events`, falling back to SSE when unavailable."""
 
@@ -687,6 +780,7 @@ def _watch_events_with_fallback(
             interval=interval,
             raw=raw,
             hooks=hooks,
+            client=client,
             progress_meter=progress_meter,
             on_terminal=on_terminal,
         )
@@ -699,6 +793,7 @@ def _watch_events_with_fallback(
             hooks=hooks,
             on_terminal=on_terminal,
             progress_meter=progress_meter,
+            client=client,
         )
 
 
@@ -769,6 +864,11 @@ def fetch(
         "--resume-done-dir",
         help="Override the default done_flags directory (defaults to RESUME_ROOT/done_flags).",
     ),
+    reuse_session: bool = typer.Option(
+        False,
+        "--reuse-session/--no-reuse-session",
+        help="Reuse a single HTTP/2 client for job submission and streaming (reduces TLS/H2 churn).",
+    ),
     webhook_url: Optional[list[str]] = typer.Option(
         None,
         "--webhook-url",
@@ -819,51 +919,57 @@ def fetch(
             watch = True
             console.print("[dim]Resume requires watching job completion; enabling --watch automatically.[/]")
 
-    with _client_ctx(settings, http2=http2) as client:
-        payload: dict[str, object] = {"url": url}
-        if profile:
-            payload["profile_id"] = profile
-        if ocr_policy:
-            payload["ocr"] = {"policy": ocr_policy}
+    shared_client: httpx.Client | None = _client(settings, http2=http2) if reuse_session else None
+    try:
+        with _client_ctx_or_shared(shared_client, settings, http2=http2) as client:
+            payload: dict[str, object] = {"url": url}
+            if profile:
+                payload["profile_id"] = profile
+            if ocr_policy:
+                payload["ocr"] = {"policy": ocr_policy}
 
-        response = client.post("/jobs", json=payload)
-        response.raise_for_status()
-        job = response.json()
-        console.print(f"[green]Created job {job.get('id')}[/]")
-        _print_job(job)
+            response = client.post("/jobs", json=payload)
+            response.raise_for_status()
+            job = response.json()
+            console.print(f"[green]Created job {job.get('id')}[/]")
+            _print_job(job)
 
-        job_id = job.get("id")
-        if job_id and webhook_url:
-            _register_webhooks_for_job(
-                client,
+            job_id = job.get("id")
+            if job_id and webhook_url:
+                _register_webhooks_for_job(
+                    client,
+                    job_id,
+                    urls=webhook_url,
+                    events=webhook_event,
+                )
+
+        resume_marked = False
+
+        def _handle_terminal(state: str, snapshot: dict[str, Any] | None) -> None:
+            nonlocal resume_marked
+            if resume_manager and state.upper() == "DONE" and not resume_marked:
+                resume_manager.mark_complete(url)
+                resume_marked = True
+
+        progress_meter = _ProgressMeter() if progress_eta else None
+
+        if watch and job_id:
+            console.rule(f"Streaming {job_id}")
+            _watch_events_with_fallback(
                 job_id,
-                urls=webhook_url,
-                events=webhook_event,
+                settings,
+                cursor=None,
+                follow=True,
+                interval=2.0,
+                raw=raw,
+                hooks=hook_map or None,
+                on_terminal=_handle_terminal if resume_manager else None,
+                progress_meter=progress_meter,
+                client=shared_client,
             )
-
-    resume_marked = False
-
-    def _handle_terminal(state: str, snapshot: dict[str, Any] | None) -> None:
-        nonlocal resume_marked
-        if resume_manager and state.upper() == "DONE" and not resume_marked:
-            resume_manager.mark_complete(url)
-            resume_marked = True
-
-    progress_meter = _ProgressMeter() if progress_eta else None
-
-    if watch and job_id:
-        console.rule(f"Streaming {job_id}")
-        _watch_events_with_fallback(
-            job_id,
-            settings,
-            cursor=None,
-            follow=True,
-            interval=2.0,
-            raw=raw,
-            hooks=hook_map or None,
-            on_terminal=_handle_terminal if resume_manager else None,
-            progress_meter=progress_meter,
-        )
+    finally:
+        if shared_client is not None:
+            shared_client.close()
 
 
 @cli.command()
@@ -972,6 +1078,7 @@ def watch(
     interval: float = typer.Option(2.0, "--interval", help="Polling interval in seconds when following."),
     raw: bool = typer.Option(False, "--raw", help="Print raw NDJSON events instead of formatted output."),
     progress_eta: bool = typer.Option(True, "--progress/--no-progress", help="Show percent/ETA while streaming events."),
+    reuse_session: bool = typer.Option(False, "--reuse-session/--no-reuse-session", help="Reuse a single HTTP client for the event stream."),
     on_event: Optional[list[str]] = typer.Option(
         None,
         "--on",
@@ -982,16 +1089,22 @@ def watch(
 
     settings = _resolve_settings(api_base)
     hook_map = _parse_event_hooks(on_event)
-    _watch_events_with_fallback(
-        job_id,
-        settings,
-        cursor=since,
-        follow=follow,
-        interval=interval,
-        raw=raw,
-        hooks=hook_map or None,
-        progress_meter=_ProgressMeter() if progress_eta else None,
-    )
+    shared_client: httpx.Client | None = _client(settings) if reuse_session else None
+    try:
+        _watch_events_with_fallback(
+            job_id,
+            settings,
+            cursor=since,
+            follow=follow,
+            interval=interval,
+            raw=raw,
+            hooks=hook_map or None,
+            progress_meter=_ProgressMeter() if progress_eta else None,
+            client=shared_client,
+        )
+    finally:
+        if shared_client is not None:
+            shared_client.close()
 
 
 @demo_cli.command("snapshot")

@@ -11,7 +11,9 @@ from typing import Any, Optional
 
 import typer
 
-DEFAULT_ROOT = Path(os.environ.get("MDWB_SMOKE_ROOT", "benchmarks/production"))
+
+def _default_root() -> Path:
+    return Path(os.environ.get("MDWB_SMOKE_ROOT", "benchmarks/production"))
 
 
 @dataclass(slots=True)
@@ -134,7 +136,7 @@ def show(
 ) -> None:
     """Print (or emit JSON for) the latest smoke summary, manifest, metrics, and weekly stats."""
 
-    paths = SmokePaths.from_root(root or DEFAULT_ROOT)
+    paths = SmokePaths.from_root(root or _default_root())
     date_stamp = _ensure_pointer(paths)
     payload: dict[str, Any] = {"run_date": date_stamp, "root": str(paths.root)} if json_output else {}
 
@@ -228,7 +230,7 @@ def check(
 ) -> None:
     """Verify that the latest smoke pointer files exist (for CI/dashboards)."""
 
-    paths = SmokePaths.from_root(root or DEFAULT_ROOT)
+    paths = SmokePaths.from_root(root or _default_root())
     missing = _collect_missing(paths, require_weekly=weekly)
     payload: dict[str, Any] = {
         "root": str(paths.root),

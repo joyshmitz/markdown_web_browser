@@ -12,7 +12,7 @@ runner = CliRunner()
 
 
 class StubResponse:
-    def __init__(self, payload: dict[str, Any], status_code: int = 200) -> None:
+    def __init__(self, payload: Any, status_code: int = 200) -> None:
         self.payload = payload
         self.status_code = status_code
 
@@ -42,6 +42,17 @@ def _fake_settings():
     return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
 
 
+def _patch_client_ctx(monkeypatch, responses: dict[str, StubResponse]) -> None:
+    def fake_client_ctx(settings, http2=True, timeout=None):  # noqa: ANN001
+        @contextmanager
+        def _ctx():
+            yield StubClient(responses)
+
+        return _ctx()
+
+    monkeypatch.setattr(mdwb_cli, "_client_ctx", fake_client_ctx)
+
+
 def test_jobs_show_prints_sweep_and_validation_summary(monkeypatch):
     manifest = {
         "warnings": [],
@@ -59,14 +70,7 @@ def test_jobs_show_prints_sweep_and_validation_summary(monkeypatch):
     snapshot = {"id": "job123", "state": "DONE", "url": "https://example.com", "progress": {"done": 5, "total": 5}, "manifest": manifest}
     responses = {"/jobs/job123": StubResponse(snapshot)}
 
-    def fake_client_ctx(settings, http2=True, timeout=None):  # noqa: ANN001, ARG001
-        @contextmanager
-        def _ctx():
-            yield StubClient(responses)
-
-        return _ctx()
-
-    monkeypatch.setattr(mdwb_cli, "_client_ctx", fake_client_ctx)
+    _patch_client_ctx(monkeypatch, responses)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["show", "job123"])
@@ -76,3 +80,64 @@ def test_jobs_show_prints_sweep_and_validation_summary(monkeypatch):
     assert "ratio=0.82" in result.output
     assert "validation" in result.output.lower()
     assert "checksum mismatch" in result.output
+
+
+def test_demo_snapshot_prints_links(monkeypatch):
+    payload = {
+        "id": "demo-job",
+        "state": "DONE",
+        "links": [
+            {"text": "Docs", "href": "https://example.com/docs", "source": "dom", "delta": "match"},
+        ],
+    }
+    responses = {"/jobs/demo": StubResponse(payload)}
+    _patch_client_ctx(monkeypatch, responses)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
+
+    result = runner.invoke(mdwb_cli.cli, ["demo", "snapshot"])
+
+    assert result.exit_code == 0
+    assert "demo-job" in result.output
+    assert "https://example.com/docs" in result.output
+
+
+def test_demo_snapshot_json_output(monkeypatch):
+    payload = {"id": "demo-json", "links": []}
+    responses = {"/jobs/demo": StubResponse(payload)}
+    _patch_client_ctx(monkeypatch, responses)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
+
+    result = runner.invoke(mdwb_cli.cli, ["demo", "snapshot", "--json"])
+
+    assert result.exit_code == 0
+    assert '"id": "demo-json"' in result.output
+    assert '"links": []' in result.output
+
+
+def test_demo_links_prints_table(monkeypatch):
+    links = [
+        {"text": "Homepage", "href": "https://example.com", "source": "dom", "delta": "match"},
+    ]
+    responses = {"/jobs/demo/links.json": StubResponse(links)}
+    _patch_client_ctx(monkeypatch, responses)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
+
+    result = runner.invoke(mdwb_cli.cli, ["demo", "links"])
+
+    assert result.exit_code == 0
+    assert "Links" in result.output
+    assert "Homepage" in result.output
+    assert "https://example.com" in result.output
+
+
+def test_demo_links_json_output(monkeypatch):
+    links = [{"text": "Archive", "href": "https://example.com/archive"}]
+    responses = {"/jobs/demo/links.json": StubResponse(links)}
+    _patch_client_ctx(monkeypatch, responses)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
+
+    result = runner.invoke(mdwb_cli.cli, ["demo", "links", "--json"])
+
+    assert result.exit_code == 0
+    assert '"Archive"' in result.output
+    assert '"https://example.com/archive"' in result.output

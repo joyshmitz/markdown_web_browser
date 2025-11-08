@@ -40,6 +40,8 @@ def test_resume_status_json(tmp_path):
     payload = json.loads(result.output)
     assert payload["done"] == 1
     assert payload["entries"] == ["https://example.com/article"]
+    assert payload["completed_entries"] == ["https://example.com/article"]
+    assert payload["pending_entries"] == []
 
 
 def test_resume_status_hash_only(tmp_path):
@@ -65,6 +67,8 @@ def test_resume_status_hash_only(tmp_path):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["entries"][0] == f"hash:{hash_value}"
+    assert payload["completed_entries"][0] == f"hash:{hash_value}"
+    assert payload["pending_entries"] == []
 
 
 def test_resume_status_counts_flags_missing_index(tmp_path):
@@ -91,5 +95,57 @@ def test_resume_status_counts_flags_missing_index(tmp_path):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["done"] == 2  # 1 indexed entry + 1 placeholder hash
-    assert payload["total"] == 1  # index only tracks url_a
+    assert payload["total"] == 2  # missing hashes now count toward the total
     assert any(entry.startswith("hash:") for entry in payload["entries"])
+
+
+def test_resume_status_human_output(tmp_path):
+    manager = mdwb_cli.ResumeManager(tmp_path)
+    url = "https://example.com/article"
+    manager.mark_complete(url)
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        [
+            "resume",
+            "status",
+            "--root",
+            str(tmp_path),
+            "--limit",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert url in result.output
+    assert "entries" in result.output.lower()
+
+
+def test_resume_status_pending_list(tmp_path):
+    resume_root = tmp_path
+    manager = mdwb_cli.ResumeManager(resume_root)
+    done_url = "https://example.com/done"
+    pending_url = "https://example.com/pending"
+    manager.mark_complete(done_url)
+    hash_done = mdwb_cli._resume_hash(done_url)
+    hash_pending = mdwb_cli._resume_hash(pending_url)
+    _rewrite_index(resume_root, [[hash_done, done_url], [hash_pending, pending_url]])
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        [
+            "resume",
+            "status",
+            "--root",
+            str(resume_root),
+            "--pending",
+            "--limit",
+            "0",
+        ],
+    )
+
+    assert result.exit_code == 0
+    output = result.output
+    assert "Pending entries" in output
+    assert pending_url in output
+    assert done_url in output

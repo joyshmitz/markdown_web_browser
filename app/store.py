@@ -407,7 +407,9 @@ class Store:
         paths = self._paths_for_job(job_id)
         target = (paths.root / relative_path).resolve()
         root = paths.root.resolve()
-        if not str(target).startswith(str(root)):
+        try:
+            target.relative_to(root)
+        except ValueError:
             raise FileNotFoundError(relative_path)
         if not target.exists():
             raise FileNotFoundError(target)

@@ -4,6 +4,7 @@ import json
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -44,7 +45,7 @@ class FakeClient:
         self.calls: list[str | None] = []
         self.closed = False
 
-    def stream(self, method: str, url: str, params=None):  # noqa: ANN001
+    def stream(self, method: str, url: str, params=None, **kwargs):  # noqa: ANN001
         since = params.get("since") if params else None
         self.calls.append(since)
         return self._responses.pop(0)
@@ -163,6 +164,170 @@ def test_log_event_formats_blocklist_and_sweep():
     assert "Tile checksum mismatch" in output
 
 
+def test_cli_events_invokes_watch_job_events(monkeypatch, tmp_path: Path) -> None:
+    called: dict[str, Any] = {}
+
+    def fake_watch_job_events(job_id, settings, cursor, follow, interval, output):  # noqa: ANN001
+        called.update(
+            {
+                "job_id": job_id,
+                "settings": settings,
+                "cursor": cursor,
+                "follow": follow,
+                "interval": interval,
+                "output_name": getattr(output, "name", None),
+            }
+        )
+        output.write("{}\n")
+
+    log_path = tmp_path / "events.log"
+    monkeypatch.setattr(mdwb_cli, "_watch_job_events", fake_watch_job_events)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda api_base: API_SETTINGS)
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        [
+            "events",
+            "job123",
+            "--since",
+            "2025-11-08T00:00:00Z",
+            "--follow",
+            "--interval",
+            "0.5",
+            "--output",
+            str(log_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called["job_id"] == "job123"
+    assert called["settings"] is API_SETTINGS
+    assert called["cursor"] == "2025-11-08T00:00:00Z"
+    assert called["follow"] is True
+    assert called["interval"] == 0.5
+    assert Path(called["output_name"]) == log_path
+    assert log_path.read_text(encoding="utf-8") == "{}\n"
+
+
+def test_iter_sse_parses_events():
+    class DummyResponse:
+        def __init__(self, lines: list[str]) -> None:
+            self.lines = lines
+
+        def iter_lines(self):  # noqa: ANN001
+            yield from self.lines
+
+    response = cast(
+        httpx.Response,
+        DummyResponse(
+            [
+                "data: hello",
+                "",
+                "event: state",
+                "data: DONE",
+                "",
+                "data: tail",
+            ]
+        ),
+    )
+
+    events = list(mdwb_cli._iter_sse(response))
+
+    assert events == [("message", "hello"), ("state", "DONE"), ("message", "tail")]
+
+
+def test_stream_command_invokes_stream_job(monkeypatch):
+    called: dict[str, Any] = {}
+
+    def fake_stream(job_id, settings, raw, **_):  # noqa: ANN001
+        called.update({"job_id": job_id, "settings": settings, "raw": raw})
+
+    def fake_resolve(api_base):  # noqa: ANN001
+        called["api_base"] = api_base
+        return API_SETTINGS
+
+    monkeypatch.setattr(mdwb_cli, "_stream_job", fake_stream)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", fake_resolve)
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        [
+            "stream",
+            "job555",
+            "--raw",
+            "--api-base",
+            "https://api.example",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called["job_id"] == "job555"
+    assert called["settings"] is API_SETTINGS
+    assert called["raw"] is True
+    assert called["api_base"] == "https://api.example"
+
+
+def test_stream_job_triggers_hooks_and_terminal(monkeypatch):
+    lines = [
+        "event: progress",
+        'data: {"done": 1, "total": 2}',
+        "",
+        "event: state",
+        "data: DONE",
+        "",
+    ]
+
+    class FakeResponse:
+        def __init__(self, payload: list[str]) -> None:
+            self.payload = payload
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+        def iter_lines(self):  # noqa: ANN001
+            yield from self.payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        def stream(self, method: str, url: str, **kwargs):  # noqa: ANN001
+            self.calls.append((method, url))
+            return FakeResponse(lines)
+
+    fake_client = FakeClient()
+    hook_calls: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        mdwb_cli,
+        "_trigger_event_hooks",
+        lambda entry, hooks: hook_calls.append((entry["event"], hooks)),
+    )
+
+    terminal_states: list[str] = []
+    with mdwb_cli.console.capture() as capture:
+        mdwb_cli._stream_job(
+            "job999",
+            API_SETTINGS,
+            raw=False,
+            hooks={"state": ["echo done"]},
+            on_terminal=lambda state, snapshot: terminal_states.append(state),
+            client=cast(httpx.Client, fake_client),
+        )
+    output = capture.get()
+
+    assert fake_client.calls == [("GET", "/jobs/job999/stream")]
+    assert "DONE" in output
+    assert terminal_states == ["DONE"]
+    assert hook_calls and hook_calls[-1][0] == "state"
+    assert hook_calls[-1][1] == {"state": ["echo done"]}
+
+
 def test_format_progress_text_with_meter(monkeypatch):
     calls = iter([0.0, 5.0])
 
@@ -179,16 +344,89 @@ def test_format_progress_text_with_meter(monkeypatch):
     assert "ETA" in text
 
 
+def test_cli_watch_invokes_fallback_with_hooks(monkeypatch):
+    called: dict[str, Any] = {}
+
+    class DummyClient:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    dummy_client = DummyClient()
+
+    def fake_watch_events_with_fallback(
+        job_id,
+        settings,
+        cursor,
+        follow,
+        interval,
+        raw,
+        hooks,
+        progress_meter,
+        client,
+    ):  # noqa: ANN001
+        called.update(
+            {
+                "job_id": job_id,
+                "settings": settings,
+                "cursor": cursor,
+                "follow": follow,
+                "interval": interval,
+                "raw": raw,
+                "hooks": hooks,
+                "progress_meter": progress_meter,
+                "client": client,
+            }
+        )
+
+    monkeypatch.setattr(mdwb_cli, "_watch_events_with_fallback", fake_watch_events_with_fallback)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda api_base: API_SETTINGS)
+    monkeypatch.setattr(mdwb_cli, "_client", lambda settings: dummy_client)
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        [
+            "watch",
+            "job123",
+            "--since",
+            "2025-11-08T01:00:00Z",
+            "--once",
+            "--interval",
+            "0.75",
+            "--raw",
+            "--no-progress",
+            "--reuse-session",
+            "--on",
+            "state:DONE=echo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called["job_id"] == "job123"
+    assert called["settings"] is API_SETTINGS
+    assert called["cursor"] == "2025-11-08T01:00:00Z"
+    assert called["follow"] is False
+    assert called["interval"] == 0.75
+    assert called["raw"] is True
+    assert called["hooks"] == {"state:DONE": ["echo"]}
+    assert called["progress_meter"] is None
+    assert called["client"] is dummy_client
+    assert dummy_client.closed
+
+
 def test_watch_events_with_fallback_streams_via_sse(monkeypatch):
     def fake_watch(*args, **kwargs):
         raise httpx.RequestError("boom", request=httpx.Request("GET", "http://test"))
 
     calls: dict[str, object] = {}
 
-    def fake_stream(job_id: str, settings: mdwb_cli.APISettings, raw: bool, hooks=None, progress_meter=None, **_):  # noqa: ANN001
+    def fake_stream(job_id: str, settings: mdwb_cli.APISettings, raw: bool, hooks=None, progress_meter=None, client=None, **_):  # noqa: ANN001,E501
         calls["job_id"] = job_id
         calls["raw"] = raw
         calls["progress_meter"] = progress_meter
+        calls["client"] = client
 
     monkeypatch.setattr(mdwb_cli, "_watch_job_events_pretty", fake_watch)
     monkeypatch.setattr(mdwb_cli, "_stream_job", fake_stream)
@@ -202,19 +440,20 @@ def test_watch_events_with_fallback_streams_via_sse(monkeypatch):
             interval=1.0,
             raw=True,
             progress_meter=None,
+            client=None,
         )
 
     output = capture.get()
     assert "falling back to SSE stream" in output
-    assert calls == {"job_id": "job123", "raw": True, "progress_meter": None}
+    assert calls == {"job_id": "job123", "raw": True, "progress_meter": None, "client": None}
 
 
 def test_watch_command_invokes_helper(monkeypatch):
     invoked: list[tuple] = []
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda api_base: API_SETTINGS)
 
-    def fake_helper(job_id, settings, cursor, follow, interval, raw, hooks, on_terminal=None, progress_meter=None, **_):  # noqa: ANN001
-        invoked.append((job_id, cursor, follow, interval, raw, hooks, progress_meter))
+    def fake_helper(job_id, settings, cursor, follow, interval, raw, hooks, on_terminal=None, progress_meter=None, client=None, **_):  # noqa: ANN001,E501
+        invoked.append((job_id, cursor, follow, interval, raw, hooks, progress_meter, client))
 
     monkeypatch.setattr(mdwb_cli, "_watch_events_with_fallback", fake_helper)
 
@@ -225,6 +464,7 @@ def test_watch_command_invokes_helper(monkeypatch):
     entry = invoked[0]
     assert entry[:6] == ("job123", None, True, 0.5, True, {"snapshot": ["echo hi"]})
     assert isinstance(entry[6], mdwb_cli._ProgressMeter)
+    assert entry[7] is None
 
 
 def test_parse_event_hooks_valid():
@@ -255,3 +495,15 @@ def test_trigger_event_hooks_ignores_non_match(monkeypatch):
     monkeypatch.setattr(mdwb_cli, "_run_hook", lambda cmd, event, payload: recorded.append(cmd))
     mdwb_cli._trigger_event_hooks({"event": "tile"}, {"snapshot": ["cmd"]})
     assert recorded == []
+
+
+def test_trigger_event_hooks_handles_state_events(monkeypatch):
+    recorded: list[tuple[str, str]] = []
+
+    def fake_run_hook(command, event, payload):  # noqa: ANN001
+        recorded.append((command, event))
+
+    monkeypatch.setattr(mdwb_cli, "_run_hook", fake_run_hook)
+    hooks = {"state:DONE": ["cmd1"], "*": ["cmd2"]}
+    mdwb_cli._trigger_event_hooks({"event": "state", "payload": "DONE"}, hooks)
+    assert recorded == [("cmd1", "state"), ("cmd2", "state")]

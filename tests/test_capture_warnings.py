@@ -1,4 +1,12 @@
-from app.capture_warnings import WarningStats, build_sweep_warning, build_warnings
+import pytest
+
+from app.capture_warnings import (
+    WarningStats,
+    build_sweep_warning,
+    build_warnings,
+    collect_capture_warnings,
+    collect_warning_stats,
+)
 from app.settings import WarningSettings
 
 
@@ -19,6 +27,42 @@ def _settings(
         seam_warning_ratio=seam_ratio,
         seam_warning_min_pairs=seam_pairs,
     )
+
+
+class _FakePage:
+    """Minimal Playwright page stand-in for async evaluate calls."""
+
+    def __init__(self, result: dict[str, int | str]) -> None:
+        self._result = result
+        self.evaluate_calls: list[str] = []
+
+    async def evaluate(self, script: str):  # type: ignore[override]
+        self.evaluate_calls.append(script)
+        return self._result
+
+
+@pytest.mark.asyncio()
+async def test_collect_warning_stats_coerces_counts() -> None:
+    page = _FakePage({"canvas": "5", "video": 2, "sticky": 4, "dialog": 1})
+
+    stats = await collect_warning_stats(page)  # type: ignore[arg-type]
+
+    assert stats.canvas_count == 5
+    assert stats.video_count == 2
+    assert stats.sticky_count == 4
+    assert stats.dialog_count == 1
+    assert page.evaluate_calls, "expected evaluate() to be invoked"
+
+
+@pytest.mark.asyncio()
+async def test_collect_capture_warnings_uses_dom_counts() -> None:
+    page = _FakePage({"canvas": 3, "video": 2, "sticky": 3, "dialog": 1})
+    settings = _settings(canvas=2, video=1, seam_pairs=1)
+
+    warnings = await collect_capture_warnings(page, settings=settings)  # type: ignore[arg-type]
+
+    codes = {warning.code for warning in warnings}
+    assert codes == {"canvas-heavy", "video-heavy", "sticky-chrome"}
 
 
 def test_build_warnings_emits_canvas_and_video(monkeypatch):

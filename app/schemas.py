@@ -130,6 +130,16 @@ class ManifestMetadata(BaseModel):
 
     environment: ManifestEnvironment
     timings: ManifestTimings = Field(default_factory=ManifestTimings)
+    tiles_total: int | None = Field(
+        default=None,
+        ge=0,
+        description="Total OCR tiles emitted for the run",
+    )
+    long_side_px: int | None = Field(
+        default=None,
+        ge=0,
+        description="Longest side (px) enforced during tiling",
+    )
     sweep_stats: ManifestSweepStats | None = Field(
         default=None,
         description="Viewport sweep counters and overlap ratio metadata",

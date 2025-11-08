@@ -57,7 +57,7 @@ uv run python scripts/run_smoke.py \
 - Enough quota on the hosted olmOCR endpoint for the nightly workload.
 
 ### Verification Checklist
-1. `scripts/run_checks.sh` (ruff → ty → targeted pytest suite → Playwright smoke) passes before the smoke run. The script now accepts `PLAYWRIGHT_BIN=/path/to/runner` when you need to invoke the Node-based Playwright test harness; otherwise it attempts `uv run playwright test …` and prints a warning if the bundled CLI lacks a `test` command. When libvips isn’t installed, set `SKIP_LIBVIPS_CHECK=1` to bypass the preflight until the dependency can be installed. The bundled pytest step covers CLI events/webhooks, olmOCR CLI config, check_env, show_latest_smoke (including `check`/`--json`), and API webhook tests so regressions surface before captures run.
+1. `scripts/run_checks.sh` (ruff → ty → targeted pytest suite → Playwright smoke) passes before the smoke run. The script now accepts `PLAYWRIGHT_BIN=/path/to/runner` when you need to invoke the Node-based Playwright test harness; otherwise it attempts `uv run playwright test …` and prints a warning if the bundled CLI lacks a `test` command. When libvips isn’t installed, set `SKIP_LIBVIPS_CHECK=1` to bypass the preflight until the dependency can be installed. The bundled pytest step covers CLI events/webhooks, olmOCR CLI config, check_env, show_latest_smoke (including `check`/`--json`), and API webhook tests so regressions surface before captures run. Each run now writes `tmp/pytest_report.xml` (`PYTEST_JUNIT_PATH`) and `tmp/pytest_summary.json` (`PYTEST_SUMMARY_PATH`) so ops/CI can read the failing test list without re-running pytest.
 2. Each category report stays below its p95 latency budget (see `manifest_index.json`).
 3. Failures must be triaged immediately; rerun `scripts/olmocr_cli.py run` on the
    offending URL with `--out-dir benchmarks/reruns` for deeper debugging.
@@ -141,17 +141,23 @@ curl -s http://localhost:9000/metrics | head -n 5  # dedicated Prom port
 The CLI command above reads `.env` for `API_BASE_URL`/`PROMETHEUS_PORT` (override with
 `--api-base`/`--exporter-port` and `--exporter-url` when talking to a remote exporter). Use
 `--json` for structured output (payload now includes `status`, `generated_at`, `ok_count`,
-`failed_count`, and a per-target list) or `--no-include-exporter` when only the primary `/metrics`
+`failed_count`, `total_duration_ms`, and per-target entries with `duration_ms`/errors) or `--no-include-exporter` when only the primary `/metrics`
 endpoint is exposed. `scripts/prom_scrape_check.py` simply wraps the same CLI for older
 automation; prefer calling `check_metrics.py` directly.
-- Optional automation toggle: set `MDWB_CHECK_METRICS=1` (and optionally `CHECK_METRICS_TIMEOUT=<seconds>`)
-  before invoking `scripts/run_checks.sh` to append the same Prometheus probe after the lint/type/pytest/Playwright
-  stages. This keeps CI aligned with manual smoke commands without requiring a separate script invocation.
+- Optional automation toggles:
+  - `MDWB_CHECK_METRICS=1` (and optionally `CHECK_METRICS_TIMEOUT=<seconds>`) appends the Prometheus probe after
+    the lint/type/pytest/Playwright stages so CI mirrors manual smoke commands.
+  - `MDWB_RUN_E2E=1` runs the richer CLI end-to-end suite (`tests/test_e2e_cli.py`) after the standard pytest subset
+    so pipelines can opt into the heavier coverage when needed.
 - If legacy pipelines still call `scripts/prom_scrape_check.py`, they automatically inherit the latest CLI flags
   (including `--json` and exporter overrides). Document the wrapper usage in release notes whenever the CLI contract shifts.
 - For ad-hoc diagnostics, `scripts/prom_scrape_check.py` is a backward-compatible wrapper around the same Typer CLI, so legacy automation can still invoke the check without code changes.
 - CI/automation can set `MDWB_CHECK_METRICS=1` (plus `CHECK_METRICS_TIMEOUT` if needed) before
-running `scripts/run_checks.sh` to run the same health check after the pytest/Playwright stack.
+  running `scripts/run_checks.sh` to run the same health check after the pytest/Playwright stack.
+- Set `MDWB_RUN_E2E=1` in CI/nightly jobs when you want `run_checks.sh` to execute `tests/test_e2e_cli.py` after the
+  existing CLI subset; keep it unset for faster iterations. The E2E suite emits FlowLogger panels (Rich tables) that
+  summarize each step; when running in CI, capture `run_checks` stdout so on-call engineers can review the panels
+  alongside pytest logs.
 
 Tie the new counters into `ops/dashboards.json`/`ops/alerts.md` so Grafana can page when
 warning spikes, job failures, or SSE stalls exceed their budgets.
@@ -191,7 +197,7 @@ warning spikes, job failures, or SSE stalls exceed their budgets.
   directly by the SSE feed, so the new manifest breadcrumbs surface even when the
   Manifest tab isn’t open.
 - When you run smoke manually (e.g., re-testing a single date), refresh the pointer files via
-  `uv run python scripts/update_smoke_pointers.py <run-dir> --root benchmarks/production`
+  `uv run python scripts/update_smoke_pointers.py <run-dir> [--root benchmarks/production]`
   (add `--weekly-source benchmarks/production/weekly_summary.json` if you need to override the weekly summary). This keeps
   `latest_summary.md`, `latest_manifest_index.json`, and `latest_metrics.json` aligned with the run that ops dashboards should display.
 - `uv run python scripts/mdwb_cli.py events <job-id> --follow` tails the raw

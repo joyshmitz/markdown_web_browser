@@ -3,7 +3,11 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Optional, Sequence
+
+import httpx
 
 import typer
 from rich.console import Console
@@ -28,6 +32,10 @@ def resolve_settings(api_base: Optional[str]) -> mdwb_cli.APISettings:
     return mdwb_cli._resolve_settings(api_base)
 
 
+def _ctx(shared: httpx.Client | None, settings: mdwb_cli.APISettings, *, http2: bool = True):
+    return mdwb_cli._client_ctx_or_shared(shared, settings, http2=http2)
+
+
 def submit_job(
     url: str,
     settings: mdwb_cli.APISettings,
@@ -35,16 +43,17 @@ def submit_job(
     http2: bool = True,
     profile: Optional[str] = None,
     ocr_policy: Optional[str] = None,
+    client: httpx.Client | None = None,
 ) -> dict:
     """Submit a capture job and return the JSON payload."""
 
-    with mdwb_cli._client_ctx(settings, http2=http2) as client:
+    with _ctx(client, settings, http2=http2) as active_client:
         payload: dict[str, object] = {"url": url}
         if profile:
             payload["profile_id"] = profile
         if ocr_policy:
             payload["ocr"] = {"policy": ocr_policy}
-        response = client.post("/jobs", json=payload)
+        response = active_client.post("/jobs", json=payload)
         response.raise_for_status()
         job = response.json()
         console.print(f"[green]Submitted job {job.get('id')} for {url}[/]")
@@ -58,13 +67,14 @@ def wait_for_completion(
     http2: bool = True,
     poll_interval: float = 2.0,
     timeout: float = 300.0,
+    client: httpx.Client | None = None,
 ) -> dict:
     """Poll /jobs/{id} until the job reaches a terminal state."""
 
     deadline = time.monotonic() + timeout
-    with mdwb_cli._client_ctx(settings, http2=http2) as client:
+    with _ctx(client, settings, http2=http2) as active_client:
         while True:
-            response = client.get(f"/jobs/{job_id}")
+            response = active_client.get(f"/jobs/{job_id}")
             response.raise_for_status()
             snapshot = response.json()
             state = snapshot.get("state")
@@ -80,11 +90,12 @@ def fetch_markdown(
     settings: mdwb_cli.APISettings,
     *,
     http2: bool = True,
+    client: httpx.Client | None = None,
 ) -> str:
     """Download the final Markdown artifact for a job."""
 
-    with mdwb_cli._client_ctx(settings, http2=http2) as client:
-        response = client.get(f"/jobs/{job_id}/result.md")
+    with _ctx(client, settings, http2=http2) as active_client:
+        response = active_client.get(f"/jobs/{job_id}/result.md")
         response.raise_for_status()
         return response.text
 
@@ -99,6 +110,7 @@ def capture_markdown(
     ocr_policy: Optional[str] = None,
     poll_interval: float = 2.0,
     timeout: float = 300.0,
+    reuse_session: bool = False,
 ) -> CaptureResult:
     """Ensure final Markdown is available by submitting or reusing a job."""
 
@@ -111,28 +123,41 @@ def capture_markdown(
     effective_job_id = job_id
     snapshot: dict
 
-    if effective_job_id is None:
-        job = submit_job(url=url or "", settings=settings, http2=http2, profile=profile, ocr_policy=ocr_policy)
-        job_id_value = job.get("id")
-        if not job_id_value:
-            raise RuntimeError("Capture job did not return a job id.")
-        effective_job_id = str(job_id_value)
+    shared_client: httpx.Client | None = mdwb_cli._client(settings, http2=http2) if reuse_session else None
+    try:
+        if effective_job_id is None:
+            job = submit_job(
+                url=url or "",
+                settings=settings,
+                http2=http2,
+                profile=profile,
+                ocr_policy=ocr_policy,
+                client=shared_client,
+            )
+            job_id_value = job.get("id")
+            if not job_id_value:
+                raise RuntimeError("Capture job did not return a job id.")
+            effective_job_id = str(job_id_value)
 
-    snapshot = wait_for_completion(
-        effective_job_id,
-        settings,
-        http2=http2,
-        poll_interval=poll_interval,
-        timeout=timeout,
-    )
+        snapshot = wait_for_completion(
+            effective_job_id,
+            settings,
+            http2=http2,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            client=shared_client,
+        )
 
-    state = snapshot.get("state")
-    if state != "DONE":
-        manifest = snapshot.get("manifest")
-        raise RuntimeError(f"Job {effective_job_id} finished in state {state}: {manifest or snapshot}")
+        state = snapshot.get("state")
+        if state != "DONE":
+            manifest = snapshot.get("manifest")
+            raise RuntimeError(f"Job {effective_job_id} finished in state {state}: {manifest or snapshot}")
 
-    markdown = fetch_markdown(effective_job_id, settings, http2=http2)
-    return CaptureResult(job_id=effective_job_id, snapshot=snapshot, markdown=markdown)
+        markdown = fetch_markdown(effective_job_id, settings, http2=http2, client=shared_client)
+        return CaptureResult(job_id=effective_job_id, snapshot=snapshot, markdown=markdown)
+    finally:
+        if shared_client is not None:
+            shared_client.close()
 
 
 def _strip_markdown(markdown: str) -> str:
@@ -216,3 +241,17 @@ def extract_todos(
         if len(tasks) >= max_tasks:
             break
     return tasks
+
+
+def save_text(path: Path, content: str) -> None:
+    """Write text content to disk (UTF-8) creating parent directories."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def save_json(path: Path, payload: object) -> None:
+    """Write JSON payload to disk (pretty-printed)."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

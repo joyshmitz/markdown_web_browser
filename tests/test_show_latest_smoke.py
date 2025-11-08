@@ -67,6 +67,15 @@ def _invoke_show(tmp_path: Path, *args: str):
     return runner.invoke(module.app, cmd)
 
 
+def test_show_latest_smoke_respects_env_root(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("MDWB_SMOKE_ROOT", str(tmp_path))
+    module = _load_cli()
+    _write_pointer_files(tmp_path)
+    result = runner.invoke(module.app, ["show", "--manifest", "--limit", "1"])
+    assert result.exit_code == 0
+    assert "Latest smoke run" in result.output
+
+
 def test_show_latest_smoke_missing_pointer(tmp_path: Path):
     result = _invoke_show(tmp_path)
     assert result.exit_code == 1
@@ -131,6 +140,39 @@ def test_show_latest_smoke_json_output(tmp_path: Path):
     assert "weekly_summary" in payload
 
 
+def test_show_latest_smoke_manifest_missing(tmp_path: Path):
+    _write_pointer_files(tmp_path)
+    (tmp_path / "latest_manifest_index.json").unlink()
+    result = _invoke_show(tmp_path, "--manifest")
+    assert result.exit_code == 1
+    assert "latest_manifest_index" in result.output
+
+
+def test_show_latest_smoke_metrics_only(tmp_path: Path):
+    _write_pointer_files(tmp_path)
+    result = _invoke_show(tmp_path, "--metrics", "--no-summary", "--no-manifest", "--no-weekly")
+    assert result.exit_code == 0
+    assert "Aggregated Metrics" in result.output
+    assert "categories" in result.output
+
+
+def test_show_latest_smoke_json_without_metrics(tmp_path: Path):
+    _write_pointer_files(tmp_path)
+    result = _invoke_show(tmp_path, "--manifest", "--json", "--no-weekly", "--no-summary")
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert "metrics" not in payload
+    assert len(payload["manifest"]) == 2
+
+
+def test_show_latest_smoke_weekly_no_categories(tmp_path: Path):
+    _write_pointer_files(tmp_path, include_weekly=True)
+    (tmp_path / "weekly_summary.json").write_text(json.dumps({"window_days": 7, "categories": []}), encoding="utf-8")
+    result = _invoke_show(tmp_path, "--weekly", "--no-summary", "--no-manifest", "--no-metrics")
+    assert result.exit_code == 0
+    assert "No category data recorded" in result.output
+
+
 def test_show_latest_smoke_check_passes(tmp_path: Path):
     module = _load_cli()
     _write_pointer_files(tmp_path)
@@ -158,6 +200,15 @@ def test_show_latest_smoke_check_json_success(tmp_path: Path):
     assert payload["missing"] == []
 
 
+def test_show_latest_smoke_check_uses_env_root(monkeypatch, tmp_path: Path):
+    _write_pointer_files(tmp_path)
+    monkeypatch.setenv("MDWB_SMOKE_ROOT", str(tmp_path))
+    module = _load_cli()
+    result = runner.invoke(module.app, ["check"])
+    assert result.exit_code == 0
+    assert "Smoke pointers present" in result.output
+
+
 def test_show_latest_smoke_check_json_missing(tmp_path: Path):
     module = _load_cli()
     _write_pointer_files(tmp_path, include_weekly=False)
@@ -166,3 +217,60 @@ def test_show_latest_smoke_check_json_missing(tmp_path: Path):
     payload = json.loads(result.output)
     assert payload["status"] == "missing"
     assert "weekly_summary" in payload["missing"]
+
+
+def test_show_latest_smoke_check_skip_weekly(tmp_path: Path):
+    module = _load_cli()
+    _write_pointer_files(tmp_path, include_weekly=False)
+    result = runner.invoke(
+        module.app,
+        [
+            "check",
+            "--root",
+            str(tmp_path),
+            "--no-weekly",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "ok"
+    assert payload["weekly_required"] is False
+    assert payload["missing"] == []
+
+
+def test_show_latest_smoke_check_pointer_missing(tmp_path: Path):
+    module = _load_cli()
+    _write_pointer_files(tmp_path)
+    (tmp_path / "latest.txt").unlink()
+    result = runner.invoke(module.app, ["check", "--root", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "Missing smoke artifacts" in result.output
+    assert "pointer" in result.output
+
+
+def test_show_latest_smoke_show_missing_summary(tmp_path: Path):
+    _write_pointer_files(tmp_path)
+    (tmp_path / "latest_summary.md").unlink()
+    result = _invoke_show(tmp_path, "--summary")
+    assert result.exit_code == 0
+    assert "latest_summary.md missing" in result.output
+
+
+def test_show_latest_smoke_check_no_weekly_json(tmp_path: Path):
+    module = _load_cli()
+    _write_pointer_files(tmp_path, include_weekly=False)
+    result = runner.invoke(
+        module.app,
+        [
+            "check",
+            "--root",
+            str(tmp_path),
+            "--no-weekly",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["weekly_required"] is False
+    assert payload["missing"] == []

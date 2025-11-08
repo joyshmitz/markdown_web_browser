@@ -2,6 +2,8 @@ from app.schemas import (
     ConcurrencyWindow,
     ManifestEnvironment,
     ManifestMetadata,
+    ManifestOCRBatch,
+    ManifestOCRQuota,
     ManifestSweepStats,
     ManifestWarning,
     ViewportSettings,
@@ -47,6 +49,17 @@ def test_manifest_metadata_accepts_blocklist_and_warnings() -> None:
         ),
         overlap_match_ratio=0.83,
         validation_failures=["tile 0003 checksum mismatch"],
+        ocr_batches=[
+            ManifestOCRBatch(
+                tile_ids=["tile_0001", "tile_0002"],
+                latency_ms=875,
+                status_code=200,
+                request_id="req-abc",
+                payload_bytes=1_500_000,
+                attempts=1,
+            )
+        ],
+        ocr_quota=ManifestOCRQuota(limit=500000, used=200000, threshold_ratio=0.7, warning_triggered=False),
     )
 
     assert manifest.blocklist_version == "2025-11-07"
@@ -56,3 +69,6 @@ def test_manifest_metadata_accepts_blocklist_and_warnings() -> None:
     assert manifest.sweep_stats.overlap_pairs == 6
     assert manifest.overlap_match_ratio == 0.83
     assert manifest.validation_failures == ["tile 0003 checksum mismatch"]
+    assert manifest.ocr_batches[0].request_id == "req-abc"
+    assert manifest.ocr_quota is not None
+    assert manifest.ocr_quota.limit == 500000

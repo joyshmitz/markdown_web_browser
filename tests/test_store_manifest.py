@@ -2,8 +2,21 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import json
+
+import pytest
 
 from app.store import StorageConfig, Store
+from app.schemas import (
+    ConcurrencyWindow,
+    ManifestEnvironment,
+    ManifestMetadata,
+    ManifestOCRBatch,
+    ManifestOCRQuota,
+    ManifestSweepStats,
+    ManifestTimings,
+    ViewportSettings,
+)
 
 
 def _storage(tmp_path: Path) -> Store:
@@ -13,10 +26,15 @@ def _storage(tmp_path: Path) -> Store:
     return Store(config=config)
 
 
+def _allocate_run(store: Store, *, job_id: str = "run-123") -> tuple[str, Path]:
+    started = datetime(2025, 11, 8, 8, 0, tzinfo=timezone.utc)
+    paths = store.allocate_run(job_id=job_id, url="https://example.com", started_at=started)
+    return job_id, paths.root
+
+
 def test_store_persists_sweep_and_validation_metadata(tmp_path: Path) -> None:
     store = _storage(tmp_path)
-    started = datetime(2025, 11, 8, 8, 0, tzinfo=timezone.utc)
-    store.allocate_run(job_id="run-123", url="https://example.com", started_at=started)
+    store.allocate_run(job_id="run-123", url="https://example.com", started_at=datetime(2025, 11, 8, 8, 0, tzinfo=timezone.utc))
 
     manifest = {
         "environment": {
@@ -59,3 +77,163 @@ def test_store_persists_sweep_and_validation_metadata(tmp_path: Path) -> None:
     assert record.sweep_overlap_pairs == 6
     assert record.overlap_match_ratio == 0.87
     assert record.validation_failure_count == 2
+
+
+def _sample_manifest_metadata() -> ManifestMetadata:
+    return ManifestMetadata(
+        environment=ManifestEnvironment(
+            cft_version="chrome-130",
+            cft_label="Stable-1",
+            playwright_channel="cft",
+            playwright_version="1.55.0",
+            browser_transport="cdp",
+            viewport=ViewportSettings(width=1280, height=2000, device_scale_factor=2, color_scheme="light"),
+            viewport_overlap_px=120,
+            tile_overlap_px=120,
+            scroll_settle_ms=350,
+            max_viewport_sweeps=200,
+            screenshot_style_hash="demo",
+            screenshot_mask_selectors=(),
+            ocr_model="olmOCR-2-7B-1025-FP8",
+            ocr_use_fp8=True,
+            ocr_concurrency=ConcurrencyWindow(min=2, max=8),
+        ),
+        sweep_stats=ManifestSweepStats(
+            sweep_count=3,
+            total_scroll_height=13000,
+            shrink_events=1,
+            retry_attempts=0,
+            overlap_pairs=4,
+            overlap_match_ratio=0.91,
+        ),
+        tiles_total=10,
+        long_side_px=1288,
+        overlap_match_ratio=0.91,
+        validation_failures=["tile 0002 checksum mismatch"],
+        timings=ManifestTimings(capture_ms=2100, ocr_ms=4200, stitch_ms=500),
+        ocr_batches=[
+            ManifestOCRBatch(
+                tile_ids=["tile_0001"],
+                latency_ms=900,
+                status_code=200,
+                request_id="req-1",
+                payload_bytes=1_200_000,
+                attempts=1,
+            )
+        ],
+        ocr_quota=ManifestOCRQuota(limit=100000, used=6000, threshold_ratio=0.7, warning_triggered=False),
+    )
+
+
+def test_store_accepts_pydantic_manifest(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id = "run-meta"
+    store.allocate_run(job_id=job_id, url="https://example.com/docs", started_at=datetime(2025, 11, 8, 9, 0, tzinfo=timezone.utc))
+    metadata = _sample_manifest_metadata()
+
+    manifest_path = store.write_manifest(job_id=job_id, manifest=metadata)
+    assert manifest_path.exists()
+
+    record = store.fetch_run(job_id)
+    assert record is not None
+    assert record.long_side_px == 1288
+    assert record.device_scale_factor == 2
+    assert record.tiles_total == 10
+    assert record.capture_ms == 2100
+    assert record.ocr_ms == 4200
+    assert record.overlap_match_ratio == 0.91
+    assert record.validation_failure_count == 1
+
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert saved["environment"]["viewport"]["device_scale_factor"] == 2
+    assert saved["sweep_stats"]["overlap_match_ratio"] == 0.91
+
+
+def test_store_read_manifest_roundtrip(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id = "run-read"
+    store.allocate_run(job_id=job_id, url="https://example.org", started_at=datetime(2025, 11, 8, 9, 30, tzinfo=timezone.utc))
+    manifest_dict = {
+        "environment": {"cft_version": "chrome-131", "viewport": {"device_scale_factor": 2}},
+        "timings": {"capture_ms": 1000},
+        "tiles_total": 4,
+        "long_side_px": 1200,
+    }
+    store.write_manifest(job_id=job_id, manifest=manifest_dict)
+
+    loaded = store.read_manifest(job_id)
+    assert loaded["environment"]["cft_version"] == "chrome-131"
+    assert loaded["timings"]["capture_ms"] == 1000
+
+
+def test_store_persists_ocr_batches_and_quota(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id = "run-ocr"
+    store.allocate_run(job_id=job_id, url="https://example.com/ocr", started_at=datetime(2025, 11, 8, 10, 0, tzinfo=timezone.utc))
+    manifest = {
+        "environment": {
+            "cft_version": "chrome-130",
+            "viewport": {"width": 1280, "height": 2000, "device_scale_factor": 2, "color_scheme": "light"},
+        },
+        "timings": {"capture_ms": 1800, "ocr_ms": 3600, "stitch_ms": 700},
+        "ocr_batches": [
+            {
+                "tile_ids": ["tile_0001", "tile_0002"],
+                "latency_ms": 950,
+                "status_code": 200,
+                "request_id": "req-123",
+                "payload_bytes": 2456789,
+                "attempts": 1,
+            },
+            {
+                "tile_ids": ["tile_0003"],
+                "latency_ms": 1250,
+                "status_code": 429,
+                "request_id": "req-124",
+                "payload_bytes": 1056789,
+                "attempts": 2,
+            },
+        ],
+        "ocr_quota": {
+            "limit": 100000,
+            "used": 70000,
+            "threshold_ratio": 0.7,
+            "warning_triggered": True,
+        },
+    }
+
+    store.write_manifest(job_id=job_id, manifest=manifest)
+    record = store.fetch_run(job_id)
+    assert record is not None
+    assert record.ocr_ms == 3600
+
+    loaded = store.read_manifest(job_id)
+    assert len(loaded["ocr_batches"]) == 2
+    assert loaded["ocr_batches"][0]["request_id"] == "req-123"
+    assert loaded["ocr_batches"][1]["status_code"] == 429
+    assert loaded["ocr_quota"]["warning_triggered"] is True
+
+
+def test_resolve_artifact_allows_descendant_paths(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id, root = _allocate_run(store)
+    target = root / "artifact" / "tiles"
+    target.mkdir(parents=True, exist_ok=True)
+    tile = target / "tile.png"
+    tile.write_text("data", encoding="utf-8")
+
+    resolved = store.resolve_artifact(job_id, "artifact/tiles/tile.png")
+
+    assert resolved == tile
+
+
+def test_resolve_artifact_blocks_path_escape(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id, root = _allocate_run(store)
+    sibling = root.parent / f"{root.name}-sibling"
+    sibling.mkdir(parents=True, exist_ok=True)
+    secret = sibling / "secret.txt"
+    secret.write_text("secret", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError):
+        store.resolve_artifact(job_id, f"../{sibling.name}/secret.txt")

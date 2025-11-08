@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from typer.testing import CliRunner
 import zstandard as zstd
@@ -233,6 +234,112 @@ def test_fetch_resume_marks_completion(monkeypatch, tmp_path):
     group_hash = mdwb_cli._resume_hash("https://resume.example")
     flag = tmp_path / "done_flags" / f"done_{group_hash}.flag"
     assert flag.exists()
+
+
+def test_fetch_requires_watch_when_on_event(monkeypatch):
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        [
+            "fetch",
+            "https://example.com",
+            "--on",
+            "state:DONE=echo hi",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--on requires --watch" in result.output
+
+
+def test_fetch_watch_passes_event_hooks(monkeypatch):
+    settings = _fake_settings()
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: settings)
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.closed = False
+            self.calls: list[str] = []
+
+        def post(self, url: str, json=None):  # noqa: ANN001
+            self.calls.append(url)
+            return DummyResponse(200, {"id": "job-abc"})
+
+        def close(self) -> None:
+            self.closed = True
+
+    shared_client = FakeClient()
+    monkeypatch.setattr(mdwb_cli, "_client", lambda *_, **__: shared_client)
+    monkeypatch.setattr(mdwb_cli, "_register_webhooks_for_job", lambda *_, **__: None)
+
+    captured: dict[str, Any] = {}
+
+    def fake_watch(job_id, settings, cursor, follow, interval, raw, hooks, on_terminal=None, progress_meter=None, client=None):  # noqa: ANN001,E501
+        captured.update(
+            {
+                "job_id": job_id,
+                "hooks": hooks,
+                "client": client,
+            }
+        )
+
+    monkeypatch.setattr(mdwb_cli, "_watch_events_with_fallback", fake_watch)
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        [
+            "fetch",
+            "https://example.com",
+            "--watch",
+            "--reuse-session",
+            "--on",
+            "state:DONE=echo finish",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["job_id"] == "job-abc"
+    assert captured["hooks"] == {"state:DONE": ["echo finish"]}
+    assert captured["client"] is shared_client
+    assert shared_client.closed
+
+
+def test_fetch_reuse_session_reuses_http_client(monkeypatch):
+    settings = _fake_settings()
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: settings)
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.closed = False
+            self.calls: list[str] = []
+
+        def post(self, url: str, json=None):  # noqa: ANN001
+            self.calls.append(url)
+            return DummyResponse(200, {"id": "job-123"})
+
+        def close(self) -> None:
+            self.closed = True
+
+    shared_client = FakeClient()
+    monkeypatch.setattr(mdwb_cli, "_client", lambda *_, **__: shared_client)
+    monkeypatch.setattr(mdwb_cli, "_register_webhooks_for_job", lambda *_, **__: None)
+
+    watch_calls: dict[str, object] = {}
+
+    def fake_watch(*, client=None, **_):  # noqa: ANN001
+        watch_calls["client"] = client
+
+    monkeypatch.setattr(mdwb_cli, "_watch_events_with_fallback", lambda *args, **kwargs: fake_watch(**kwargs))
+
+    result = runner.invoke(
+        mdwb_cli.cli,
+        ["fetch", "https://reuse.example", "--watch", "--reuse-session"],
+    )
+
+    assert result.exit_code == 0
+    assert shared_client.closed
+    assert watch_calls["client"] is shared_client
 
 
 def test_resume_manager_list_entries_filters_completed(tmp_path):

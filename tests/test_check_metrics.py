@@ -23,8 +23,9 @@ class StubConfig:
 def test_run_check_probes_primary_and_exporter(monkeypatch):
     called: list[str] = []
 
-    def fake_probe(url: str, timeout: float) -> None:  # noqa: ANN001
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
         called.append(url)
+        return 12.5
 
     monkeypatch.setattr(check_metrics, "_probe", fake_probe)
     monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9100}))
@@ -36,7 +37,7 @@ def test_run_check_probes_primary_and_exporter(monkeypatch):
 
 
 def test_run_check_json_output(monkeypatch):
-    monkeypatch.setattr(check_metrics, "_probe", lambda url, timeout: None)
+    monkeypatch.setattr(check_metrics, "_probe", lambda url, timeout: 12.3)
     monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9200}))
 
     result = runner.invoke(check_metrics.cli, ["--json", "--no-include-exporter"])
@@ -47,14 +48,16 @@ def test_run_check_json_output(monkeypatch):
     assert payload["ok_count"] == 1
     assert payload["failed_count"] == 0
     assert "generated_at" in payload
-    assert payload["targets"] == [{"url": "http://api/metrics", "ok": True}]
+    assert payload["targets"] == [{"url": "http://api/metrics", "ok": True, "duration_ms": 12.3}]
+    assert payload["total_duration_ms"] == 12.3
 
 
 def test_exporter_url_override(monkeypatch):
     called: list[str] = []
 
-    def fake_probe(url: str, timeout: float) -> None:  # noqa: ANN001
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
         called.append(url)
+        return 9.1
 
     monkeypatch.setattr(check_metrics, "_probe", fake_probe)
     monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9100}))
@@ -69,6 +72,126 @@ def test_exporter_url_override(monkeypatch):
 
     assert result.exit_code == 0
     assert called == ["http://api/metrics", "https://prom.internal/metrics"]
+
+
+def test_exporter_url_trailing_slash_trimmed(monkeypatch):
+    called: list[str] = []
+
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
+        called.append(url)
+        return 6.6
+
+    monkeypatch.setattr(check_metrics, "_probe", fake_probe)
+    monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9100}))
+
+    result = runner.invoke(
+        check_metrics.cli,
+        [
+            "--exporter-url",
+            "https://prom.example/metrics/",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called == ["http://api/metrics", "https://prom.example/metrics"]
+
+
+def test_exporter_host_port_override_and_timeout(monkeypatch):
+    calls: list[tuple[str, float]] = []
+
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
+        calls.append((url, timeout))
+        return 7.7
+
+    monkeypatch.setattr(check_metrics, "_probe", fake_probe)
+    monkeypatch.setattr(
+        check_metrics,
+        "_load_config",
+        lambda: StubConfig({"API_BASE_URL": "http://ignored", "PROMETHEUS_PORT": 9000}),
+    )
+
+    result = runner.invoke(
+        check_metrics.cli,
+        [
+            "--api-base",
+            "http://override",
+            "--exporter-host",
+            "metrics",
+            "--exporter-port",
+            "9400",
+            "--timeout",
+            "2.5",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("http://override/metrics", 2.5),
+        ("http://metrics:9400/metrics", 2.5),
+    ]
+
+
+def test_run_check_skips_exporter_when_port_zero(monkeypatch):
+    called: list[str] = []
+
+    monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 0}))
+
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
+        called.append(url)
+        return 4.2
+
+    monkeypatch.setattr(check_metrics, "_probe", fake_probe)
+
+    result = runner.invoke(check_metrics.cli, [])
+
+    assert result.exit_code == 0
+    assert called == ["http://api/metrics"]
+
+
+def test_exporter_url_ignored_when_include_disabled(monkeypatch):
+    called: list[str] = []
+
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
+        called.append(url)
+        return 5.0
+
+    monkeypatch.setattr(check_metrics, "_probe", fake_probe)
+    monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9100}))
+
+    result = runner.invoke(
+        check_metrics.cli,
+        [
+            "--no-include-exporter",
+            "--exporter-url",
+            "https://metrics.example/metrics",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called == ["http://api/metrics"]
+
+
+def test_api_base_trailing_slash_is_stripped(monkeypatch):
+    called: list[str] = []
+
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
+        called.append(url)
+        return 4.4
+
+    monkeypatch.setattr(check_metrics, "_probe", fake_probe)
+    monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://ignored", "PROMETHEUS_PORT": 0}))
+
+    result = runner.invoke(
+        check_metrics.cli,
+        [
+            "--api-base",
+            "http://custom/",
+            "--no-include-exporter",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called == ["http://custom/metrics"]
 
 
 def test_run_check_reports_failures(monkeypatch):
@@ -98,3 +221,44 @@ def test_run_check_json_reports_failures(monkeypatch):
     assert payload["status"] == "error"
     assert payload["failed_count"] == 1
     assert payload["targets"][0]["ok"] is False
+
+
+def test_run_check_json_mixed_results(monkeypatch):
+    durations: dict[str, float] = {"http://api/metrics": 8.0}
+
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
+        if url == "http://api/metrics":
+            return durations[url]
+        raise RuntimeError("exporter down")
+
+    monkeypatch.setattr(check_metrics, "_probe", fake_probe)
+    monkeypatch.setattr(
+        check_metrics,
+        "_load_config",
+        lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9400}),
+    )
+
+    result = runner.invoke(check_metrics.cli, ["--json", "--exporter-host", "prom", "--timeout", "1.0"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["status"] == "error"
+    assert payload["ok_count"] == 1
+    assert payload["failed_count"] == 1
+    assert payload["targets"][0] == {"url": "http://api/metrics", "ok": True, "duration_ms": durations["http://api/metrics"]}
+    assert payload["targets"][1]["ok"] is False
+
+
+def test_run_check_console_outputs_duration(monkeypatch):
+    monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api"}))
+
+    def fake_probe(url: str, timeout: float) -> float:  # noqa: ANN001
+        assert url == "http://api/metrics"
+        return 15.5
+
+    monkeypatch.setattr(check_metrics, "_probe", fake_probe)
+
+    result = runner.invoke(check_metrics.cli, ["--timeout", "2.0", "--no-include-exporter"])
+
+    assert result.exit_code == 0
+    assert "[OK] http://api/metrics (15.5 ms)" in result.output
