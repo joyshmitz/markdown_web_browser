@@ -148,6 +148,14 @@ def test_show_latest_smoke_manifest_missing(tmp_path: Path):
     assert "latest_manifest_index" in result.output
 
 
+def test_show_latest_smoke_manifest_missing_json(tmp_path: Path):
+    _write_pointer_files(tmp_path)
+    (tmp_path / "latest_manifest_index.json").unlink()
+    result = _invoke_show(tmp_path, "--manifest", "--json")
+    assert result.exit_code == 1
+    assert "latest_manifest_index" in result.output
+
+
 def test_show_latest_smoke_metrics_only(tmp_path: Path):
     _write_pointer_files(tmp_path)
     result = _invoke_show(tmp_path, "--metrics", "--no-summary", "--no-manifest", "--no-weekly")
@@ -217,6 +225,17 @@ def test_show_latest_smoke_check_json_missing(tmp_path: Path):
     payload = json.loads(result.output)
     assert payload["status"] == "missing"
     assert "weekly_summary" in payload["missing"]
+
+
+def test_show_latest_smoke_check_json_missing_summary(tmp_path: Path):
+    module = _load_cli()
+    _write_pointer_files(tmp_path)
+    (tmp_path / "latest_summary.md").unlink()
+    result = runner.invoke(module.app, ["check", "--root", str(tmp_path), "--json"])
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["status"] == "missing"
+    assert "summary" in payload["missing"]
 
 
 def test_show_latest_smoke_check_skip_weekly(tmp_path: Path):

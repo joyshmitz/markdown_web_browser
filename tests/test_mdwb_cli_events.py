@@ -175,12 +175,12 @@ def test_cli_events_invokes_watch_job_events(monkeypatch, tmp_path: Path) -> Non
                 "cursor": cursor,
                 "follow": follow,
                 "interval": interval,
-                "output_name": getattr(output, "name", None),
             }
         )
         output.write("{}\n")
 
     log_path = tmp_path / "events.log"
+    log_path.write_text("existing\n", encoding="utf-8")
     monkeypatch.setattr(mdwb_cli, "_watch_job_events", fake_watch_job_events)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda api_base: API_SETTINGS)
 
@@ -205,8 +205,7 @@ def test_cli_events_invokes_watch_job_events(monkeypatch, tmp_path: Path) -> Non
     assert called["cursor"] == "2025-11-08T00:00:00Z"
     assert called["follow"] is True
     assert called["interval"] == 0.5
-    assert Path(called["output_name"]) == log_path
-    assert log_path.read_text(encoding="utf-8") == "{}\n"
+    assert log_path.read_text(encoding="utf-8") == "existing\n{}\n"
 
 
 def test_iter_sse_parses_events():

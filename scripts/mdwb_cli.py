@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, ContextManager, Iterable, Iterator, Mapping, Optional, TextIO, Tuple
 
 import httpx
+import sys
 import typer
 from decouple import Config as DecoupleConfig, RepositoryEnv
 from rich.console import Console
@@ -1052,6 +1053,13 @@ def diag(
     _print_diag_report(snapshot, manifest, manifest_source, manifest_error)
 
 
+def _open_output_stream(path_value: str) -> tuple[TextIO, bool]:
+    if path_value == "-":
+        return sys.stdout, False
+    handle = open(path_value, "a", encoding="utf-8")
+    return handle, True
+
+
 @cli.command()
 def events(
     job_id: str = typer.Argument(..., help="Job identifier"),
@@ -1059,14 +1067,19 @@ def events(
     since: Optional[str] = typer.Option(None, help="ISO timestamp cursor for incremental polling."),
     follow: bool = typer.Option(False, "--follow/--no-follow", help="Continue polling for new events."),
     interval: float = typer.Option(2.0, "--interval", help="Polling interval in seconds when following."),
-    output: typer.FileTextWrite = typer.Option(
+    output_path: str = typer.Option(
         "-", "--output", "-o", help="File to append NDJSON events to (default stdout)."
     ),
 ) -> None:
     """Fetch newline-delimited job events (JSONL)."""
 
     settings = _resolve_settings(api_base)
-    _watch_job_events(job_id, settings, cursor=since, follow=follow, interval=interval, output=output)
+    output, should_close = _open_output_stream(output_path)
+    try:
+        _watch_job_events(job_id, settings, cursor=since, follow=follow, interval=interval, output=output)
+    finally:
+        if should_close:
+            output.close()
 
 
 @cli.command()

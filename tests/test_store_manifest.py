@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import io
 import json
+import tarfile
 
 import pytest
+import zstandard as zstd
 
 from app.store import StorageConfig, Store
 from app.schemas import (
@@ -237,3 +240,45 @@ def test_resolve_artifact_blocks_path_escape(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError):
         store.resolve_artifact(job_id, f"../{sibling.name}/secret.txt")
+
+
+def _tar_members(bundle: Path) -> list[str]:
+    decompressed = zstd.ZstdDecompressor().decompress(bundle.read_bytes())
+    with tarfile.open(fileobj=io.BytesIO(decompressed), mode="r:") as tar:
+        return sorted(member.name for member in tar.getmembers())
+
+
+def _seed_run_files(root: Path) -> None:
+    (root / "out.md").write_text("markdown", encoding="utf-8")
+    manifest = root / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    dom = root / "artifact" / "dom.html"
+    dom.parent.mkdir(parents=True, exist_ok=True)
+    dom.write_text("<html></html>", encoding="utf-8")
+    tile_dir = root / "artifact" / "tiles"
+    tile_dir.mkdir(parents=True, exist_ok=True)
+    (tile_dir / "tile_0000.png").write_bytes(b"tile-data")
+
+
+def test_build_bundle_includes_tiles_by_default(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id, root = _allocate_run(store, job_id="run-bundle")
+    _seed_run_files(root)
+
+    bundle = store.build_bundle(job_id=job_id)
+
+    names = _tar_members(bundle)
+    assert any(name.endswith("tile_0000.png") for name in names)
+    assert any(name.endswith("out.md") for name in names)
+
+
+def test_build_bundle_excludes_tiles_when_requested(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id, root = _allocate_run(store, job_id="run-bundle-no-tiles")
+    _seed_run_files(root)
+
+    bundle = store.build_bundle(job_id=job_id, include_tiles=False)
+
+    names = _tar_members(bundle)
+    assert not any("tiles" in name for name in names)
+    assert any(name.endswith("out.md") for name in names)

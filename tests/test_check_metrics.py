@@ -84,13 +84,7 @@ def test_exporter_url_trailing_slash_trimmed(monkeypatch):
     monkeypatch.setattr(check_metrics, "_probe", fake_probe)
     monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 9100}))
 
-    result = runner.invoke(
-        check_metrics.cli,
-        [
-            "--exporter-url",
-            "https://prom.example/metrics/",
-        ],
-    )
+    result = runner.invoke(check_metrics.cli, ["--exporter-url", "https://prom.example/metrics/"])
 
     assert result.exit_code == 0
     assert called == ["http://api/metrics", "https://prom.example/metrics"]
