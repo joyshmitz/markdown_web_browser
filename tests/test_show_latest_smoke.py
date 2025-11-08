@@ -22,8 +22,20 @@ def _write_pointer_files(root: Path, *, include_weekly: bool = True, over_budget
     (root / "latest.txt").write_text("2025-11-08\n", encoding="utf-8")
     (root / "latest_summary.md").write_text("# Summary\n\nSmoke output", encoding="utf-8")
     manifest_rows = [
-        {"category": "docs", "url": "https://example.com/article", "capture_ms": 1200, "total_ms": 2200},
-        {"category": "apps", "url": "https://example.org/dashboard", "capture_ms": 3200, "total_ms": 4200},
+        {
+            "category": "docs",
+            "url": "https://example.com/article",
+            "capture_ms": 1200,
+            "total_ms": 2200,
+            "sweep_stats": {"overlap_match_ratio": 0.9},
+            "validation_failures": ["tile checksum mismatch"],
+        },
+        {
+            "category": "apps",
+            "url": "https://example.org/dashboard",
+            "capture_ms": 3200,
+            "total_ms": 4200,
+        },
     ]
     (root / "latest_manifest_index.json").write_text(json.dumps(manifest_rows), encoding="utf-8")
     metrics_payload = {
@@ -78,6 +90,8 @@ def test_show_latest_smoke_respects_limit_and_no_summary(tmp_path: Path):
     assert "https://example.com/article" in output
     assert "https://example.org/dashboard" not in output  # limit trimmed
     assert "Aggregated Metrics" in output
+    assert "overlap=0.90" in output
+    assert "validation_failures=1" in output
 
 
 def test_show_latest_smoke_weekly_highlights_over_budget(tmp_path: Path):
@@ -111,6 +125,8 @@ def test_show_latest_smoke_json_output(tmp_path: Path):
     assert payload["run_date"] == "2025-11-08"
     assert payload["summary_markdown"].startswith("# Summary")
     assert len(payload["manifest"]) == 1
+    assert payload["manifest"][0]["overlap_match_ratio"] == 0.9
+    assert payload["manifest"][0]["validation_failure_count"] == 1
     assert "metrics" in payload
     assert "weekly_summary" in payload
 

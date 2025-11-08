@@ -77,19 +77,29 @@ def _auth_headers(settings: APISettings) -> dict[str, str]:
     return headers
 
 
-def _client(settings: APISettings, http2: bool = True) -> httpx.Client:
-    timeout = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+def _client(
+    settings: APISettings,
+    http2: bool = True,
+    *,
+    timeout: httpx.Timeout | None = None,
+) -> httpx.Client:
+    effective_timeout = timeout or httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
     return httpx.Client(
         base_url=settings.base_url,
-        timeout=timeout,
+        timeout=effective_timeout,
         http2=http2,
         headers=_auth_headers(settings),
     )
 
 
 @contextmanager
-def _client_ctx(settings: APISettings, *, http2: bool = True) -> Iterator[httpx.Client]:
-    client = _client(settings, http2=http2)
+def _client_ctx(
+    settings: APISettings,
+    *,
+    http2: bool = True,
+    timeout: httpx.Timeout | None = None,
+) -> Iterator[httpx.Client]:
+    client = _client(settings, http2=http2, timeout=timeout)
     try:
         yield client
     finally:
@@ -97,12 +107,27 @@ def _client_ctx(settings: APISettings, *, http2: bool = True) -> Iterator[httpx.
 
 
 def _print_job(job: dict) -> None:
+    manifest = job.get("manifest")
+    sweep_row = "-"
+    validation_row = "-"
+    if isinstance(manifest, dict):
+        sweep_row = _format_sweep_summary(
+            {
+                "sweep_stats": manifest.get("sweep_stats"),
+                "overlap_match_ratio": manifest.get("overlap_match_ratio"),
+            }
+        )
+        validation_row = _format_validation_summary(manifest.get("validation_failures"))
     table = Table("Field", "Value", title=f"Job {job.get('id', 'unknown')}")
     for key in ("state", "url", "progress", "manifest", "warnings", "blocklist_hits"):
         value = job.get(key)
         if isinstance(value, (dict, list)):
             value = json.dumps(value, indent=2)
         table.add_row(key, str(value))
+    if sweep_row != "-":
+        table.add_row("sweep", sweep_row)
+    if validation_row != "-":
+        table.add_row("validation", validation_row)
     console.print(table)
 
 
@@ -305,7 +330,7 @@ def _stream_job(
     raw: bool,
     hooks: Optional[dict[str, list[str]]] = None,
 ) -> None:
-    with httpx.Client(base_url=settings.base_url, timeout=None, headers=_auth_headers(settings)) as client:
+    with _client_ctx(settings, timeout=None) as client:
         with client.stream("GET", f"/jobs/{job_id}/stream") as response:
             response.raise_for_status()
             for event, payload in _iter_sse(response):
@@ -330,8 +355,7 @@ def _iter_event_lines(
     follow: bool,
     interval: float,
 ):
-    client = _client(settings)
-    try:
+    with _client_ctx(settings) as client:
         while True:
             params: dict[str, str] = {}
             if cursor:
@@ -346,8 +370,6 @@ def _iter_event_lines(
             if not follow:
                 break
             time.sleep(interval)
-    finally:
-        client.close()
 
 
 def _watch_job_events(
@@ -875,7 +897,7 @@ def _print_warning_records(records: list[dict[str, Any]], *, json_output: bool) 
         return
     if json_output:
         for record in records:
-            console.print(json.dumps(record))
+            console.print(json.dumps(_augment_warning_record(record)))
         return
     table = Table("timestamp", "job", "warnings", "blocklist", "sweep", "validation", title="Warning Log")
     for row in _warning_rows(records):
@@ -892,6 +914,23 @@ def _warning_rows(records: Iterable[dict[str, Any]]) -> Iterable[tuple[str, str,
         sweep = _format_sweep_summary(record)
         validation = _format_validation_summary(record.get("validation_failures"))
         yield (str(timestamp), str(job), warnings, blocklist, sweep, validation)
+
+
+def _augment_warning_record(record: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(record)
+    validations = record.get("validation_failures")
+    if isinstance(validations, list):
+        enriched.setdefault("validation_failure_count", len(validations))
+    stats = record.get("sweep_stats")
+    ratio = record.get("overlap_match_ratio")
+    if ratio is None and isinstance(stats, dict):
+        ratio = stats.get("overlap_match_ratio")
+    enriched["sweep_summary"] = _format_sweep_summary(
+        {"sweep_stats": stats if isinstance(stats, dict) else {}, "overlap_match_ratio": ratio}
+    )
+    if ratio is not None:
+        enriched["overlap_match_ratio"] = ratio
+    return enriched
 
 
 def _format_warning_summary(values: Any) -> str:
@@ -1087,7 +1126,7 @@ def demo_stream(
     """Tail the demo SSE stream."""
 
     settings = _resolve_settings(api_base)
-    with httpx.Client(base_url=settings.base_url, timeout=None, headers=_auth_headers(settings)) as client:
+    with _client_ctx(settings, timeout=None) as client:
         with client.stream("GET", "/jobs/demo/stream") as response:
             response.raise_for_status()
             for event, payload in _iter_sse(response):
@@ -1142,7 +1181,7 @@ def demo_events(
     import json as jsonlib
 
     settings = _resolve_settings(api_base)
-    with httpx.Client(base_url=settings.base_url, timeout=None, headers=_auth_headers(settings)) as client:
+    with _client_ctx(settings, timeout=None) as client:
         with client.stream("GET", "/jobs/demo/stream") as response:
             response.raise_for_status()
             for event, payload in _iter_sse(response):
@@ -1193,13 +1232,13 @@ def jobs_webhooks_list(
     """List registered webhooks for a job."""
 
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response = client.get(f"/jobs/{job_id}/webhooks")
-    if response.status_code == 404:
-        detail = _extract_detail(response) or f"Job {job_id} not found."
-        _print_webhook_list_error(detail, job_id, json_output)
-    response.raise_for_status()
-    data = response.json()
+    with _client_ctx(settings) as client:
+        response = client.get(f"/jobs/{job_id}/webhooks")
+        if response.status_code == 404:
+            detail = _extract_detail(response) or f"Job {job_id} not found."
+            _print_webhook_list_error(detail, job_id, json_output)
+        response.raise_for_status()
+        data = response.json()
     if json_output:
         console.print_json(data={"status": "ok", "job_id": job_id, "webhooks": data})
         return
@@ -1222,18 +1261,18 @@ def jobs_webhooks_add(
     """Register a webhook for a job."""
 
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    payload: dict[str, Any] = {"url": url}
-    if event:
-        payload["events"] = event
-    response = client.post(f"/jobs/{job_id}/webhooks", json=payload)
-    if response.status_code in {400, 404}:
-        detail = _extract_detail(response) or (
-            "Job not found." if response.status_code == 404 else "Webhook rejected."
-        )
-        _print_webhook_add_error(detail, job_id, json_output)
-    response.raise_for_status()
-    body = response.json()
+    with _client_ctx(settings) as client:
+        payload: dict[str, Any] = {"url": url}
+        if event:
+            payload["events"] = event
+        response = client.post(f"/jobs/{job_id}/webhooks", json=payload)
+        if response.status_code in {400, 404}:
+            detail = _extract_detail(response) or (
+                "Job not found." if response.status_code == 404 else "Webhook rejected."
+            )
+            _print_webhook_add_error(detail, job_id, json_output)
+        response.raise_for_status()
+        body = response.json()
     if json_output:
         console.print_json(data={"status": "ok", **body})
         return
@@ -1256,18 +1295,18 @@ def jobs_webhooks_delete(
         raise typer.BadParameter("Provide --id or --url to delete a webhook")
 
     settings = _resolve_settings(api_base)
-    client = _client(settings)
-    response, payload = _delete_job_webhooks(client, job_id, webhook_id=webhook_id, url=url)
-    if response.status_code == 404:
-        detail = _extract_detail(response) or "Webhook or job not found."
-        _print_delete_error(detail, job_id, json_output)
-        return
-    if response.status_code == 400:
-        detail = _extract_detail(response) or "Webhook deletion rejected."
-        _print_delete_error(detail, job_id, json_output)
-        return
-    response.raise_for_status()
-    body = response.json()
+    with _client_ctx(settings) as client:
+        response, payload = _delete_job_webhooks(client, job_id, webhook_id=webhook_id, url=url)
+        if response.status_code == 404:
+            detail = _extract_detail(response) or "Webhook or job not found."
+            _print_delete_error(detail, job_id, json_output)
+            return
+        if response.status_code == 400:
+            detail = _extract_detail(response) or "Webhook deletion rejected."
+            _print_delete_error(detail, job_id, json_output)
+            return
+        response.raise_for_status()
+        body = response.json()
     if json_output:
         console.print_json(data={"status": "ok", **body, "request": payload})
         return

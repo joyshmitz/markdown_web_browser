@@ -1,0 +1,3 @@
+bd-7sx Prometheus metrics instrumentation — instrumentation + docs done; waiting on Grafana scrape to validate queries/alerts once data flows.
+bd-bb4 Prom metrics health smoke — scripts/check_metrics.py + tests shipped and bead closed; docs/PLAN updated.
+Next bead standby: monitoring Prom scrape rollout to confirm dashboards/alerts consume mdwb_* metrics; ready to pick up tkq slice once telemetry consumers give the green light.

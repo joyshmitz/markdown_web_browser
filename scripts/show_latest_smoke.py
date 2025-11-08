@@ -53,6 +53,29 @@ def _format_ms(value: Any) -> str:
     return str(value)
 
 
+def _augment_manifest_row(row: dict[str, Any]) -> dict[str, Any]:
+    data = dict(row)
+    validations = data.get("validation_failures")
+    if isinstance(validations, list):
+        data["validation_failure_count"] = len(validations)
+    elif isinstance(data.get("validation_failure_count"), int):
+        pass
+    else:
+        data.pop("validation_failure_count", None)
+    stats = data.get("sweep_stats") if isinstance(data.get("sweep_stats"), dict) else None
+    ratio = data.get("overlap_match_ratio")
+    if ratio is None and stats:
+        ratio = stats.get("overlap_match_ratio")
+    if ratio is not None:
+        try:
+            data["overlap_match_ratio"] = float(ratio)
+        except (TypeError, ValueError):
+            data.pop("overlap_match_ratio", None)
+    else:
+        data.pop("overlap_match_ratio", None)
+    return data
+
+
 def _load_weekly_summary(paths: SmokePaths) -> dict[str, Any]:
     if not paths.weekly_summary.exists():
         typer.secho("weekly_summary.json missing", fg=typer.colors.RED)
@@ -135,18 +158,28 @@ def show(
         if not paths.manifest_index.exists():
             typer.secho("latest_manifest_index.json missing", fg=typer.colors.RED)
             raise typer.Exit(1)
-        manifest_rows = json.loads(paths.manifest_index.read_text(encoding="utf-8"))
+        raw_rows = json.loads(paths.manifest_index.read_text(encoding="utf-8"))
+        manifest_rows = [_augment_manifest_row(row) for row in raw_rows]
         if limit is not None:
             manifest_rows = manifest_rows[:limit]
         if not json_output:
             typer.secho("\n=== Manifest Index ===", fg=typer.colors.CYAN)
             for row in manifest_rows:
+                extras: list[str] = []
+                ratio = row.get("overlap_match_ratio")
+                if isinstance(ratio, (int, float)):
+                    extras.append(f"overlap={ratio:.2f}")
+                validation_count = row.get("validation_failure_count")
+                if isinstance(validation_count, int) and validation_count > 0:
+                    extras.append(f"validation_failures={validation_count}")
+                extra_text = f" [{', '.join(extras)}]" if extras else ""
                 typer.echo(
-                    " - {category}: {url} (capture_ms={capture_ms}, total_ms={total_ms})".format(
+                    " - {category}: {url} (capture_ms={capture_ms}, total_ms={total_ms}){extras}".format(
                         category=row.get("category", "?"),
                         url=row.get("url", "?"),
                         capture_ms=row.get("capture_ms"),
                         total_ms=row.get("total_ms"),
+                        extras=extra_text,
                     )
                 )
         else:

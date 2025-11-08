@@ -54,7 +54,7 @@ def test_jobs_ocr_metrics_prints_table(monkeypatch):
     }
     response = StubResponse({"id": "job", "manifest": manifest})
     stub = StubClient({"/jobs/job": response})
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True: stub)
+    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True, **_: stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["jobs", "ocr-metrics", "job"])
@@ -69,7 +69,7 @@ def test_jobs_ocr_metrics_json_output(monkeypatch):
     manifest = {"ocr_batches": [], "ocr_quota": {"limit": None, "used": None, "threshold_ratio": 0.7}}
     response = StubResponse({"id": "job", "manifest": manifest})
     stub = StubClient({"/jobs/job": response})
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True: stub)
+    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True, **_: stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["jobs", "ocr-metrics", "job", "--json"])
@@ -81,7 +81,7 @@ def test_jobs_ocr_metrics_json_output(monkeypatch):
 def test_jobs_ocr_metrics_errors_when_manifest_missing(monkeypatch):
     response = StubResponse({"id": "job", "manifest": None})
     stub = StubClient({"/jobs/job": response})
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True: stub)
+    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True, **_: stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["jobs", "ocr-metrics", "job"])

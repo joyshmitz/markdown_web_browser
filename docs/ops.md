@@ -40,10 +40,12 @@ uv run python scripts/run_smoke.py \
   - `benchmarks/production/latest_summary.md`
   so dashboards/automation can point at a stable path.
 - Run `uv run python scripts/show_latest_smoke.py --manifest --metrics --weekly` to inspect
-  the latest summary/manifest pointers plus the rolling `weekly_summary.json`. The CLI now
-  highlights categories that exceed their p95 budgets and accepts `--limit` to trim the manifest
-  table. Set `MDWB_SMOKE_ROOT=/path/to/runs` (or pass `--root`) if the pointer files live outside
-  `benchmarks/production/`, and add `--json` when automation needs structured output instead of tables.
+  the latest summary/manifest pointers plus the rolling `weekly_summary.json`. Manifest rows include
+  overlap ratios and validation failure counts when the data exists, so seam regressions are visible
+  without opening individual manifests. The CLI highlights categories that exceed their p95 budgets
+  and accepts `--limit` to trim the manifest table. Set `MDWB_SMOKE_ROOT=/path/to/runs` (or pass `--root`)
+  if the pointer files live outside `benchmarks/production/`, and add `--json` when automation needs
+  structured output instead of tables.
 - For automation/health checks, run `uv run python scripts/show_latest_smoke.py check --root benchmarks/production`
   (add `--no-weekly` if you only care about summary/manifest/metrics). Pass `--json` when you want a structured payload
   (fields: `status`, `missing`, `root`, `weekly_required`, `run_date`) and rely on the exit code instead of parsing text.
@@ -55,7 +57,7 @@ uv run python scripts/run_smoke.py \
 - Enough quota on the hosted olmOCR endpoint for the nightly workload.
 
 ### Verification Checklist
-1. `scripts/run_checks.sh` (ruff → ty → targeted pytest suite → Playwright smoke) passes before the smoke run. The bundled pytest step covers CLI events/webhooks, olmOCR CLI config, check_env, show_latest_smoke (including `check`/`--json`), and API webhook tests so regressions surface before captures run.
+1. `scripts/run_checks.sh` (ruff → ty → targeted pytest suite → Playwright smoke) passes before the smoke run. The script now accepts `PLAYWRIGHT_BIN=/path/to/runner` when you need to invoke the Node-based Playwright test harness; otherwise it attempts `uv run playwright test …` and prints a warning if the bundled CLI lacks a `test` command. When libvips isn’t installed, set `SKIP_LIBVIPS_CHECK=1` to bypass the preflight until the dependency can be installed. The bundled pytest step covers CLI events/webhooks, olmOCR CLI config, check_env, show_latest_smoke (including `check`/`--json`), and API webhook tests so regressions surface before captures run.
 2. Each category report stays below its p95 latency budget (see `manifest_index.json`).
 3. Failures must be triaged immediately; rerun `scripts/olmocr_cli.py run` on the
    offending URL with `--out-dir benchmarks/reruns` for deeper debugging.
@@ -100,10 +102,11 @@ Publish the summary in Monday’s ops update and attach the most recent
   can be triaged without scraping manifests.
 - Use the CLI helper `uv run python scripts/mdwb_cli.py warnings tail --count 50 --json`
   (add `--follow` to stream, or `--log-path` to override the default) to review recent entries.
-  When `--follow` is set the CLI now waits for the log to appear and automatically recovers from
-  truncation/logrotate events, so long-lived tails keep running overnight. The pretty output
-  summarizes warning codes, blocklist selectors, sweep overlap ratios, and validation failures
-  so ops can spot duplicate seams or retries immediately.
+  JSON output now includes derived fields (`validation_failure_count`, `overlap_match_ratio`,
+  `sweep_summary`) so dashboards/automation can ingest seam health without parsing the pretty table.
+  When `--follow` is set the CLI waits for the log to appear and automatically recovers from
+  truncation/logrotate events, so long-lived tails keep running overnight. The pretty output still
+  summarizes warning codes, blocklist selectors, sweep overlap ratios, and validation failures.
 - Job watchers (`mdwb fetch --watch`, `mdwb jobs watch`, `mdwb demo stream`) print the same
   sweep/blocklist/validation summaries whenever manifests expose those fields, so noisy runs
   surface the breadcrumbs even without tailing the log.
@@ -127,17 +130,21 @@ the workflows converge.
     noisy overlays or duplicate seams trigger dashboards without parsing manifests.
   - `mdwb_job_completions_total{state="DONE|FAILED"}` to track success rates and
     `mdwb_sse_heartbeat_total` to alert on stalled `/jobs/{id}/stream` feeds.
-- Quick smoke check:
+- Quick smoke check (API + exporter):
 
 ```
-uv run python scripts/check_metrics.py --timeout 3.0
+uv run python scripts/check_metrics.py --timeout 3.0 --json
 curl -s http://localhost:8000/metrics | grep mdwb_capture_duration_seconds
 curl -s http://localhost:9000/metrics | head -n 5  # dedicated Prom port
 ```
 
 The CLI command above reads `.env` for `API_BASE_URL`/`PROMETHEUS_PORT` (override with
-`--api-base`/`--exporter-port`). Use `--no-include-exporter` when only the primary `/metrics`
+`--api-base`/`--exporter-port` and `--exporter-url` when talking to a remote exporter). Use
+`--json` for structured output or `--no-include-exporter` when only the primary `/metrics`
 endpoint is exposed.
+- For ad-hoc diagnostics, `scripts/prom_scrape_check.py` is a backward-compatible wrapper around the same Typer CLI, so legacy automation can still invoke the check without code changes.
+- CI/automation can set `MDWB_CHECK_METRICS=1` (plus `CHECK_METRICS_TIMEOUT` if needed) before
+running `scripts/run_checks.sh` to run the same health check after the pytest/Playwright stack.
 
 Tie the new counters into `ops/dashboards.json`/`ops/alerts.md` so Grafana can page when
 warning spikes, job failures, or SSE stalls exceed their budgets.
@@ -191,6 +198,8 @@ warning spikes, job failures, or SSE stalls exceed their budgets.
 - `uv run python scripts/mdwb_cli.py jobs artifacts manifest <job-id> --out manifest.json`
   (or `markdown`, `links`) downloads the persisted files without curl; use `--pretty/--raw`
   to control JSON formatting when writing to disk.
+- `uv run python scripts/mdwb_cli.py jobs show <job-id>` now includes "Sweep" and "Validation" rows summarizing overlap ratios, shrink/retry counts, and any tile-integrity failures right in the table—use this before diving into manifests when triaging seams.
+- `uv run python scripts/mdwb_cli.py warnings tail --json` streams warning log entries with derived fields like `validation_failure_count`, `overlap_match_ratio`, and `sweep_summary`, making it easier to feed dashboards without parsing the text table.
 - `uv run python scripts/mdwb_cli.py jobs bundle <job-id> --out bundle.tar.zst`
   fetches the tarball (`bundle.tar.zst`) that Store emits alongside the tiles/markdown/links/manifest, keeping
   incidents and reruns reproducible without hand-written curl commands.
@@ -203,3 +212,11 @@ warning spikes, job failures, or SSE stalls exceed their budgets.
   structured matches.
 - `uv run python scripts/mdwb_cli.py diag <job-id>` prints CfT/Playwright metadata, capture/OCR/stitch timings,
   warnings, and blocklist hits for a run (with `--json` for automation), matching the incident-response playbook in PLAN §20.
+
+### CLI Quick Reference
+- **Diag:** `mdwb_cli.py diag <job-id> [--json]` – one-stop capture/OCR/stitch metadata for incidents.
+- **Hooks:** `mdwb_cli.py watch <job-id> --on state:DONE='notify-send mdwb done'` (and `fetch --watch --on …`) – run shell commands whenever streamed events fire; commands receive `MDWB_EVENT_*` env vars.
+- **Warnings:** `mdwb_cli.py warnings tail --json --count 100` – stream warning/blocklist incidents with sweep/validation metadata ready for dashboards.
+- **Artifacts & bundles:** `mdwb_cli.py jobs artifacts manifest|markdown|links` and `jobs bundle <job-id> --out bundle.tar.zst` – fetch Markdown/links/manifests or the tarball without manual curl.
+- **Replay:** `mdwb_cli.py jobs replay <manifest.json> --json` – replay stored manifests via `/replay`, replacing the old shell helper.
+- **Embeddings:** `mdwb_cli.py jobs embeddings search <job-id> --vector-file vec.json --top-k 5 --json` – query sqlite-vec directly from the CLI when agents need to jump to specific Markdown sections.

@@ -29,6 +29,9 @@ class StubClient:
         self.posts.append((url, json or {}))
         return self.response
 
+    def close(self) -> None:  # pragma: no cover - simple stub
+        return None
+
 
 def _fake_settings():
     return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
@@ -36,7 +39,7 @@ def _fake_settings():
 
 def _monkeypatch_client(monkeypatch, response: StubResponse):  # noqa: ANN001
     client = StubClient(response)
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True: client)
+    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True, **_: client)
     return client
 
 

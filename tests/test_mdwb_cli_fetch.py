@@ -45,7 +45,10 @@ def test_fetch_with_webhook_urls(monkeypatch):
                 return DummyResponse(200, {"id": "job-123"})
             return DummyResponse(202)
 
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True: FakeClient())
+        def close(self) -> None:  # pragma: no cover - simple stub
+            return None
+
+    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True, **_: FakeClient())
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(
@@ -77,7 +80,10 @@ def test_fetch_handles_webhook_failure(monkeypatch):
                 return DummyResponse(200, {"id": "job-123"})
             return DummyResponse(500, text="boom")
 
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True: FakeClient())
+        def close(self) -> None:  # pragma: no cover - simple stub
+            return None
+
+    monkeypatch.setattr(mdwb_cli, "_client", lambda settings, http2=True, **_: FakeClient())
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from contextlib import contextmanager
+
 from typer.testing import CliRunner
 
 from scripts import mdwb_cli
@@ -41,6 +43,14 @@ def _fake_settings():
     return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
 
 
+def _patch_client_ctx(monkeypatch, stub):
+    @contextmanager
+    def fake_ctx(settings, http2=True):  # noqa: ANN001
+        yield stub
+
+    monkeypatch.setattr(mdwb_cli, "_client_ctx", fake_ctx)
+
+
 def test_diag_uses_snapshot_manifest(monkeypatch):
     manifest = {
         "environment": {
@@ -58,7 +68,7 @@ def test_diag_uses_snapshot_manifest(monkeypatch):
     }
     snapshot = {"id": "job123", "url": "https://example.com", "state": "DONE", "progress": {"done": 5, "total": 5}, "manifest": manifest}
     stub = StubClient({"/jobs/job123": StubResponse(200, payload=snapshot)})
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings: stub)
+    _patch_client_ctx(monkeypatch, stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["diag", "job123"])
@@ -78,7 +88,7 @@ def test_diag_fetches_manifest_when_missing(monkeypatch):
             "/jobs/job456/manifest.json": StubResponse(200, payload=manifest),
         }
     )
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings: stub)
+    _patch_client_ctx(monkeypatch, stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["diag", "job456", "--json"])
@@ -90,7 +100,7 @@ def test_diag_fetches_manifest_when_missing(monkeypatch):
 
 def test_diag_handles_missing_job(monkeypatch):
     stub = StubClient({"/jobs/missing": StubResponse(404, text="not found")})
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings: stub)
+    _patch_client_ctx(monkeypatch, stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["diag", "missing"])

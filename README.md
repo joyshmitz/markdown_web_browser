@@ -38,6 +38,7 @@ See `PLAN_TO_IMPLEMENT_MARKDOWN_WEB_BROWSER_PROJECT.md` §§2–5, 19 for the fu
 
 ## CLI cheatsheet (`scripts/mdwb_cli.py`)
 - `fetch <url> [--watch]` — enqueue + optionally stream Markdown as tiles finish.
+- `fetch <url> --resume` — skip URLs whose done flags already exist under `done_flags/` (uses `work_index_list.csv.zst`).
 - `fetch <url> --webhook-url https://... [--webhook-event DONE --webhook-event FAILED]` — register callbacks right after the job is created.
 - `show <job-id> [--ocr-metrics]` — dump the latest job snapshot, optionally with OCR batch/quota telemetry.
 - `stream <job-id>` — follow the SSE feed.
@@ -58,7 +59,7 @@ The CLI reads `API_BASE_URL` + `MDWB_API_KEY` from `.env`; override with `--api-
 - **Transport + viewport:** Defaults (`PLAYWRIGHT_TRANSPORT=cdp`, viewport 1280×2000, DPR 2) live in `app/settings.py` and must align with PLAN §§3, 19.
 - **OCR credentials:** `OLMOCR_SERVER`, `OLMOCR_API_KEY`, and `OLMOCR_MODEL` are required unless you point at `OCR_LOCAL_URL`.
 - **Warning log + blocklist:** Keep `WARNING_LOG_PATH` and `BLOCKLIST_PATH` writable so scroll/overlay incidents are persisted (`docs/config.md` documents every field).
-- **System packages:** Install libvips 8.15+ so the pyvips-based tiler works (`sudo apt-get install libvips` on Debian/Ubuntu). `scripts/run_checks.sh` will fail with `libvips.so` missing errors if the system library isn’t present.
+- **System packages:** Install libvips 8.15+ so the pyvips-based tiler works (`sudo apt-get install libvips` on Debian/Ubuntu, `brew install vips` on macOS). `scripts/run_checks.sh` checks for `pyvips` and fails fast with install instructions unless you explicitly set `SKIP_LIBVIPS_CHECK=1` (for targeted CLI/unit runs on machines without libvips).
 
 ## Testing & quality gates
 Run these before pushing or shipping capture-facing changes:
@@ -69,7 +70,10 @@ uvx ty check
 uv run playwright test tests/smoke_capture.spec.ts
 ```
 
-`./scripts/run_checks.sh` wraps the same sequence for CI.
+`./scripts/run_checks.sh` wraps the same sequence for CI. Set `PLAYWRIGHT_BIN=/path/to/playwright-test`
+if you need to invoke the Node-based runner; otherwise the script attempts `uv run playwright test …` and
+prints a warning when the bundled Python CLI lacks the `test` command. When you already know libvips isn’t
+available in a minimal container, export `SKIP_LIBVIPS_CHECK=1` to bypass the preflight warning.
 
 Also run `uv run python scripts/check_env.py` whenever `.env` changes—CI and nightly smokes depend on it to confirm CfT pins + OCR secrets.
 
@@ -87,11 +91,13 @@ Additional expectations (per PLAN §§14, 19.10, 22):
 
 ## Operations & automation
 - `scripts/run_smoke.py` — nightly URL set capture + manifest/latency aggregation.
-- `scripts/show_latest_smoke.py` — quick pointers to the latest smoke outputs.
+- `scripts/show_latest_smoke.py` — quick pointers to the latest smoke outputs; manifest rows now include overlap ratios + validation failure counts when available so seam regressions stand out.
 - `scripts/olmocr_cli.py` + `docs/olmocr_cli.md` — hosted olmOCR orchestration/diagnostics.
 - `mdwb jobs replay manifest <manifest.json>` — re-run a job with a stored manifest via `POST /replay` (accepts `--api-base`, `--http2`, `--json`); keep `scripts/replay_job.sh` around for legacy automation until everything points at the CLI.
+- `mdwb jobs show <job-id>` — inspect the latest snapshot plus sweep stats/validation issues in one table (look for the new “sweep”/“validation” rows when diagnosing seam problems).
 - `scripts/update_smoke_pointers.py <run-dir> --root benchmarks/production` — refresh `latest_summary.md`, `latest_manifest_index.json`, and `latest_metrics.json` after ad-hoc smoke runs so dashboards point at the right data (add `--weekly-source` when overriding the rolling summary).
 - Prometheus metrics now cover capture/OCR/stitch durations, warning/blocklist counts, job completions, and SSE heartbeats via `prometheus-fastapi-instrumentator`. Scrape `/metrics` on the API port or hit the background exporter on `PROMETHEUS_PORT` (default 9000); docs/ops.md lists the metric names + alert hooks.
+- Set `MDWB_CHECK_METRICS=1` (optionally `CHECK_METRICS_TIMEOUT=<seconds>`) when running `scripts/run_checks.sh` to include the Prometheus smoke (`scripts/check_metrics.py`) alongside the usual lint/type/pytest/Playwright stack.
 
 ### Handy commands
 ```bash
@@ -142,6 +148,7 @@ Use `mdwb jobs bundle …` or `mdwb jobs artifacts manifest …` (or `/jobs/{id}
 - **`.env` drift:** `uv run python scripts/check_env.py --json` pinpoints missing values. Required vars with `None` will fail CI.
 - **OCR throttling:** Lower `OCR_MAX_CONCURRENCY`, restart the job, and capture request IDs from manifests for the ops thread.
 - **Warning log explosions:** Tail `uv run python scripts/mdwb_cli.py warnings --count 100 --json` and look for repeated warning codes (canvas-heavy, scroll-shrink). Update `docs/blocklist.md` / selectors if overlays broke capture.
+- **Warning log explosions:** Tail `uv run python scripts/mdwb_cli.py warnings --count 100 --json` and look for repeated warning codes (canvas-heavy, scroll-shrink); the JSON output now includes `validation_failure_count`, `overlap_match_ratio`, and `sweep_summary` to speed up dashboard ingestion. Update `docs/blocklist.md` / selectors if overlays broke capture.
 - **SSE disconnects:** The UI should show an SSE health badge; check `/jobs/{id}/events` NDJSON output via `mdwb events --follow` to ensure the backend is still emitting. If not, inspect `app/jobs.py` logs for heartbeat gaps.
 - **Manifest missing links/DOM snapshots:** Ensure the capture job has write access to `CACHE_ROOT`; the Store will refuse to emit `/jobs/{id}/links.json` when the DOM snapshot can’t be written.
 

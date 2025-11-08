@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from contextlib import contextmanager
+
 from typer.testing import CliRunner
 
 from scripts import mdwb_cli
@@ -34,6 +36,14 @@ def _fake_settings():
     return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
 
 
+def _patch_client_ctx(monkeypatch, stub):
+    @contextmanager
+    def fake_ctx(settings, http2=True):  # noqa: ANN001
+        yield stub
+
+    monkeypatch.setattr(mdwb_cli, "_client_ctx", fake_ctx)
+
+
 def test_embeddings_search_pretty(monkeypatch):
     response = StubResponse(
         200,
@@ -45,7 +55,7 @@ def test_embeddings_search_pretty(monkeypatch):
         },
     )
     stub = StubClient(response)
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings: stub)
+    _patch_client_ctx(monkeypatch, stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(
@@ -64,7 +74,7 @@ def test_embeddings_search_json(monkeypatch, tmp_path: Path):
     vector_path.write_text("[0.5, 0.75]", encoding="utf-8")
     response = StubResponse(200, payload={"total_sections": 1, "matches": []})
     stub = StubClient(response)
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings: stub)
+    _patch_client_ctx(monkeypatch, stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(

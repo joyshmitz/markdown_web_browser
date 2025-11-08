@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -71,7 +72,14 @@ def test_cursor_from_line_uses_snapshot_timestamp_when_missing_top_level():
 def test_iter_event_lines_updates_cursor_and_closes_client(monkeypatch):
     responses = [FakeResponse([json.dumps({"timestamp": "2025-11-08T00:00:00+00:00"})])]
     fake_client = FakeClient(responses)
-    monkeypatch.setattr(mdwb_cli, "_client", lambda settings: fake_client)
+    @contextmanager
+    def fake_client_ctx(settings, **_):  # noqa: ANN001
+        try:
+            yield fake_client
+        finally:
+            fake_client.close()
+
+    monkeypatch.setattr(mdwb_cli, "_client_ctx", fake_client_ctx)
     monkeypatch.setattr(mdwb_cli.time, "sleep", lambda _: None)
 
     lines = list(

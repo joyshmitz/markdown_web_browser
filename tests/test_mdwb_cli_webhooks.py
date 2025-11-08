@@ -48,6 +48,9 @@ class StubClient:
             raise AssertionError(f"Unexpected method {method}")
         return self.delete(url, json=json)
 
+    def close(self) -> None:  # pragma: no cover - simple stub
+        return None
+
 
 def _monkeypatch_client(monkeypatch, *, get=None, post=None, delete=None):  # noqa: ANN001
     client = StubClient(get=get, post=post, delete=delete)

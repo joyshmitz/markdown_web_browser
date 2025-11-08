@@ -198,7 +198,7 @@ _2025-11-08 — BrownStone (bd-dm9) introduced JSON-backed selector blocklist + 
 - Scroll shrink / poor overlap → capture now emits `scroll-shrink` and `overlap-low` warnings whenever viewport sweeps retry due to shrinking SPAs or overlap match ratios fall below the configured threshold (defaults: 1 shrink event, 0.65 ratio). _2025-11-08 — BrownStone (bd-dm9)._
 _2025-11-08 — WhiteSnow (bd-dm9) added sweep stats + `validation_failures` to CaptureManifest and the ops warning log so retries and duplicate seams show up even when no DOM warnings fire._
 _2025-11-08 — WhiteSnow (bd-dm9) updated the web UI manifest tab to render blocklist hits, sweep stats, and validation failures, and the SSE event feed now emits dedicated blocklist/sweep/validation events so the Events tab/CLI watchers stay in sync._
-_2025-11-08 — LilacSnow (bd-dm9) synced the public `ManifestMetadata` schema/docs/tests with the capture dataclass so sweep stats, overlap ratios, and validation failures flow through APIs, CLI output, and manifests without ad-hoc parsing, and persisted those fields to SQLite via RunRecord so dashboards can consume them._
+_2025-11-08 — LilacSnow (bd-dm9) synced the public `ManifestMetadata` schema/docs/tests with the capture dataclass so sweep stats, overlap ratios, and validation failures flow through APIs, CLI output, and manifests without ad-hoc parsing, persisted those fields to SQLite via RunRecord, surfaced them through `mdwb jobs show` (new sweep/validation rows) + warning log JSON output, and mirrored the same breadcrumbs in `scripts/show_latest_smoke.py` so nightly smoke manifests highlight seam regressions immediately._
 - Server overload → adaptive OCR concurrency, queue visibility, remote/local failover.
 - Partial results → stream partial Markdown as tiles finish; mark sections as incomplete with provenance comments.
 - Full-page retries → viewport sweep restarts when shrink detected; record both sweeps.
@@ -285,6 +285,9 @@ _2025-11-08 — PinkCat (bd-tda) landed the initial replay helper, and PinkDog (
 _2025-11-08 — PinkDog (bd-vnx) added the missing `mdwb jobs embeddings search` CLI command so ops/agents can hit `/jobs/{id}/embeddings/search` directly (supports inline or file-based vectors, `--top-k`, and `--json` output)._
 _2025-11-08 — PinkDog (bd-w66) implemented `mdwb watch --on EVENT=COMMAND` (also available via `fetch --watch`) so lightweight automation can react to `snapshot`, `state:DONE`, or other custom events with shell hooks (commands receive `MDWB_EVENT_*` env vars)._
 _2025-11-08 — Added pytest coverage (`tests/test_mdwb_cli_events.py`) for the CLI event-tail helpers so `_iter_event_lines`, `_watch_job_events_pretty`, and `_cursor_from_line` keep working as the NDJSON feed evolves._
+_2025-11-08 — PurpleHill (bd-1gi) finished migrating the remaining event/watch/replay/demo commands onto `_client_ctx` (including the NDJSON cursor helper) so all mdwb CLI HTTP calls close their clients deterministically; ruff/ty/pytest ran clean after the change._
+_2025-11-08 — PinkCat (bd-t46) refreshed README + docs/ops to document the new diag/watch hook/artifact/replay/embeddings commands so ops/onboarding have a single CLI reference._
+_2025-11-08 — PinkCat (bd-mux) added `SKIP_LIBVIPS_CHECK=1` to `scripts/run_checks.sh` so targeted CLI/unit runs can bypass the libvips preflight on hosts without the system dependency while keeping the default fail-fast behavior._
 - SSE: `event:state`, `event:tile`, `event:warning`
 - JSONLines: newline-delimited objects mirroring SSE for CLI `--follow`
 
@@ -468,6 +471,7 @@ Document every new env var inside `docs/config.md` so operators know how CfT pin
 
 _2025-11-08 — PinkCreek (bd-ug0) owning ops/test instrumentation: codifying ruff/ty/Playwright automation + nightly smoke + weekly latency scripts before wiring dashboards and CLI docs._
 _2025-11-08 — PinkCat (bd-tt4) adding pytest coverage for `scripts/check_env.py` (required/optional sets + human/JSON output) so env validation stays stable when config inputs change._
+_2025-11-08 — PinkCat (bd-8pt) added a libvips/pyvips preflight to `scripts/run_checks.sh` so missing system deps surface immediately instead of crashing pytest with `libvips.so` errors._
 
 - **Golden pages:** static docs, sticky headers, SPAs with virtualized lists, huge tables, canvas charts.
 - **Assertions:** headings preserved, no duplicate sections at seams, DOM vs OCR link delta < 10%, tables recognized, provenance comments present.
@@ -628,6 +632,7 @@ _2025-11-08 — PinkCreek (bd-ug0) designing ops automation: smoke/latency job r
   - `SSEDrop`: SSE heartbeat gap > 12s (monitor via HTMX ping endpoint).
 _2025-11-08 — WhiteCastle (bd-7sx) wired Prometheus instrumentation (`prometheus-fastapi-instrumentator` + background exporter on `PROMETHEUS_PORT`) and custom metrics covering capture/OCR/stitch histograms, warning/blocklist counters, SSE/NDJSON heartbeats, and job completion totals. `/metrics` now exposes the same registry for local smoke checks and CI._
 _2025-11-08 — WhiteCastle (bd-bb4) added `scripts/check_metrics.py` so CI/ops can ping `/metrics` + the standalone exporter with one command; docs/ops now reference the helper alongside the manual curl examples._
+_2025-11-08 — WhiteCastle (bd-2n8) added an opt-in Prometheus smoke step to `scripts/run_checks.sh` (enable via `MDWB_CHECK_METRICS=1`, override timeout with `CHECK_METRICS_TIMEOUT`) so CI/deploy scripts can ping `/metrics` whenever the API is reachable._
 _2025-11-08 — PinkDog (bd-oqr) added the `mdwb diag <job_id>` CLI command so on-call engineers can pull CfT/Playwright metadata, capture/OCR/stitch timings, warnings, and blocklist hits (with `--json` output) straight from the CLI per the Section 20 playbook._
 
 ### 20.3 Release & Regression Process

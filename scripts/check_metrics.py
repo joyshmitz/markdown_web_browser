@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -50,10 +51,19 @@ def run_check(
         None,
         help="Override PROMETHEUS_PORT (defaults to value from .env).",
     ),
+    exporter_url: str | None = typer.Option(
+        None,
+        help="Full URL for exporter metrics (takes precedence over host/port).",
+    ),
     include_exporter: bool = typer.Option(
         True,
         "--include-exporter/--no-include-exporter",
         help="Whether to probe the standalone exporter in addition to /metrics on the API base.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json/--no-json",
+        help="Emit machine-readable output summarizing each target.",
     ),
     timeout: float = typer.Option(5.0, help="HTTP timeout per request (seconds)."),
 ) -> None:
@@ -64,21 +74,35 @@ def run_check(
     port = exporter_port if exporter_port is not None else _default_exporter_port(cfg)
 
     targets: list[str] = [f"{base}/metrics"]
-    if include_exporter and port > 0:
-        targets.append(f"http://{exporter_host}:{port}/metrics")
+    if include_exporter:
+        if exporter_url:
+            targets.append(exporter_url.rstrip("/"))
+        elif port > 0:
+            targets.append(f"http://{exporter_host}:{port}/metrics")
 
     errors: list[str] = []
+    results: list[dict[str, object]] = []
     for url in targets:
         try:
             _probe(url, timeout)
-            typer.echo(f"[OK] {url}")
+            results.append({"url": url, "ok": True})
+            if not json_output:
+                typer.echo(f"[OK] {url}")
         except Exception as exc:  # noqa: BLE001
-            errors.append(f"[FAIL] {url}: {exc}")
+            message = f"[FAIL] {url}: {exc}"
+            errors.append(message)
+            results.append({"url": url, "ok": False, "error": str(exc)})
+            if not json_output:
+                typer.echo(message)
 
     if errors:
-        for line in errors:
-            typer.echo(line)
+        if json_output:
+            payload = {"status": "error", "targets": results}
+            typer.echo(json.dumps(payload, indent=2))
         raise typer.Exit(code=1)
+    if json_output:
+        payload = {"status": "ok", "targets": results}
+        typer.echo(json.dumps(payload, indent=2))
 
 
 def main() -> None:
