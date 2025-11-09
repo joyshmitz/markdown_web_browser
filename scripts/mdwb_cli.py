@@ -1513,7 +1513,7 @@ def _format_dom_assist_summary(summary: Any) -> str:
     reason_counts = summary.get("reason_counts") or []
     if isinstance(reason_counts, list) and reason_counts:
         formatted_counts = ", ".join(
-            f"{entry.get('reason', 'unknown')}({entry.get('count', '')})" for entry in reason_counts
+            _format_reason_count(entry) for entry in reason_counts
         )
     elif reasons:
         formatted_counts = ", ".join(str(reason) for reason in reasons)
@@ -1521,10 +1521,26 @@ def _format_dom_assist_summary(summary: Any) -> str:
         formatted_counts = "-"
     sample = summary.get("sample") or {}
     sample_reason = sample.get("reason")
+    density = summary.get("assist_density")
+    density_text = None
+    if isinstance(density, (int, float)):
+        density_text = f"density={density:.3f}"
     parts = [f"{count} assist(s)" if count is not None else "assists", formatted_counts]
+    if density_text:
+        parts.append(density_text)
     if sample_reason:
         parts.append(f"sample={sample_reason}")
     return " | ".join(part for part in parts if part and part != "-")
+
+
+def _format_reason_count(entry: Mapping[str, Any]) -> str:
+    reason = entry.get("reason", "unknown")
+    count = entry.get("count")
+    ratio = entry.get("ratio")
+    ratio_text = ""
+    if isinstance(ratio, (int, float)):
+        ratio_text = f", {ratio*100:.1f}%"
+    return f"{reason}({count}{ratio_text})"
 
 
 def _format_sweep_summary(record: dict[str, Any]) -> str:
@@ -1672,7 +1688,13 @@ def _print_diag_report(
         console.print("[dim]No DOM assists recorded.[/]")
 
     seam_markers = (manifest or {}).get("seam_markers")
-    _print_seam_markers(seam_markers)
+    if seam_markers:
+        _print_seam_markers(seam_markers)
+    else:
+        _print_seam_marker_counts(
+            snapshot.get("seam_marker_count"),
+            snapshot.get("seam_hash_count"),
+        )
 
     autotune_data = (manifest or {}).get("ocr_autotune")
     _print_ocr_autotune(autotune_data)
@@ -1715,6 +1737,16 @@ def _dom_assist_counter(entries: Sequence[Mapping[str, Any]]) -> Counter[str]:
         if isinstance(reason, str) and reason:
             counter[reason] += 1
     return counter
+
+
+def _print_seam_marker_counts(count: Any, hash_count: Any) -> None:
+    if not isinstance(count, int):
+        console.print("[dim]No seam markers recorded yet.[/]")
+        return
+    message = f"Seam markers: {count}"
+    if isinstance(hash_count, int):
+        message += f" (unique hashes: {hash_count})"
+    console.print(message)
 
 
 def _print_seam_markers(entries: Any) -> None:

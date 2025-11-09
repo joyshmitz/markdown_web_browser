@@ -46,9 +46,12 @@ def append_warning_log(
     if overlap_ratio is None and sweep_stats:
         overlap_ratio = sweep_stats.get("overlap_match_ratio")
     seam_summary = _summarize_seam_markers(getattr(manifest, "seam_markers", None))
+    tiles_total = getattr(manifest, "tiles_total", None)
     dom_summary = getattr(manifest, "dom_assist_summary", None)
     if not dom_summary:
-        dom_summary = summarize_dom_assists(getattr(manifest, "dom_assists", None))
+        dom_summary = summarize_dom_assists(
+            getattr(manifest, "dom_assists", None), tiles_total=tiles_total
+        )
 
     should_log = bool(warnings or blocklist_hits or validation_failures)
     if not should_log and sweep_stats:
@@ -149,7 +152,7 @@ def _summarize_seam_markers(markers: Any, *, sample_limit: int = 3) -> dict[str,
     }
 
 
-def summarize_dom_assists(entries: Sequence[Any] | None) -> dict[str, Any] | None:
+def summarize_dom_assists(entries: Sequence[Any] | None, *, tiles_total: int | None = None) -> dict[str, Any] | None:
     if not entries:
         return None
     normalized: list[dict[str, Any]] = []
@@ -163,13 +166,27 @@ def summarize_dom_assists(entries: Sequence[Any] | None) -> dict[str, Any] | Non
     if not normalized:
         return None
     counter = Counter(str(item.get("reason", "unknown")) for item in normalized)
+    total_assists = len(normalized)
+    density = None
+    if tiles_total and tiles_total > 0:
+        density = total_assists / tiles_total
+    reason_counts: list[dict[str, Any]] = []
+    for reason, count in counter.most_common():
+        ratio = None
+        if tiles_total and tiles_total > 0:
+            ratio = count / tiles_total
+        elif total_assists > 0:
+            ratio = count / total_assists
+        reason_counts.append({"reason": reason, "count": count, "ratio": ratio})
     summary: dict[str, Any] = {
-        "count": len(normalized),
+        "count": total_assists,
         "reasons": sorted(reason for reason in counter if isinstance(reason, str)),
-        "reason_counts": [
-            {"reason": reason, "count": count} for reason, count in counter.most_common()
-        ],
+        "reason_counts": reason_counts,
     }
+    if density is not None:
+        summary["assist_density"] = density
+    if tiles_total is not None:
+        summary["tiles_total"] = tiles_total
     sample = next((entry for entry in normalized if entry.get("reason")), normalized[0])
     summary["sample"] = {
         "tile_index": sample.get("tile_index"),

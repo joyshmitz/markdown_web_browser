@@ -136,6 +136,10 @@ async def _fake_runner(*, job_id: str, url: str, store: Store, config=None):  # 
             "threshold_ratio": 0.7,
             "warning_triggered": False,
         },
+        seam_markers=[
+            {"tile_index": 0, "position": "top", "hash": "aaa111"},
+            {"tile_index": 1, "position": "bottom", "hash": "bbb222"},
+        ],
         profile_id=getattr(config, "profile_id", None),
         cache_key=getattr(config, "cache_key", None),
     )
@@ -193,6 +197,20 @@ async def test_job_manager_event_log_records_history(tmp_path: Path):
     assert history
     assert history[0]["snapshot"]["state"] == JobState.BROWSER_STARTING.value
     assert history[-1]["snapshot"]["state"] == JobState.DONE.value
+
+
+@pytest.mark.asyncio
+async def test_job_manager_snapshot_includes_seam_counts(tmp_path: Path):
+    config = StorageConfig(cache_root=tmp_path / "cache", db_path=tmp_path / "runs.db")
+    manager = JobManager(store=Store(config), runner=_fake_runner)
+    snapshot = await manager.create_job(JobCreateRequest(url="https://example.com/seams"))
+    job_id = snapshot["id"]
+    task = manager._tasks[job_id]
+    await task
+
+    final_snapshot = manager.get_snapshot(job_id)
+    assert final_snapshot.get("seam_marker_count") == 2
+    assert final_snapshot.get("seam_hash_count") == 2
 
 
 @pytest.mark.asyncio

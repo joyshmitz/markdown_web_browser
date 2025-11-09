@@ -138,3 +138,29 @@ def test_diag_reports_manifest_error(monkeypatch):
     assert "/jobs/job789/manifest.json" in stub.calls
     assert "Manifest Error" in output
     assert "manifest-deleted" in output
+
+
+def test_diag_uses_snapshot_seam_counts(monkeypatch):
+    snapshot = {
+        "id": "job999",
+        "url": "https://example.com/seams",
+        "state": "DONE",
+        "progress": {"done": 1, "total": 1},
+        "seam_marker_count": 3,
+        "seam_hash_count": 2,
+    }
+    stub = StubClient(
+        {
+            "/jobs/job999": StubResponse(200, payload=snapshot),
+            "/jobs/job999/manifest.json": StubResponse(404, payload={"detail": "missing"}),
+        }
+    )
+    _patch_client_ctx(monkeypatch, stub)
+    monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
+
+    with mdwb_cli.console.capture() as capture:
+        result = runner.invoke(mdwb_cli.cli, ["diag", "job999"])
+
+    output = capture.get()
+    assert result.exit_code == 0
+    assert "Seam markers: 3 (unique hashes: 2)" in output

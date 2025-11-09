@@ -1,3 +1,4 @@
+bd-co1 JobManager/SSE review — fixed `app/main.py` to import `summarize_dom_assists` from warning_log and emit DOM-assist events even when manifests only include `dom_assist_summary`, keeping SSE/UI panels accurate for cached or replayed jobs.
 bd-7sx Prometheus metrics instrumentation — instrumentation + docs done; waiting on Grafana scrape to validate queries/alerts once data flows.
 bd-bb4 Prom metrics health smoke — scripts/check_metrics.py + tests shipped and bead closed; docs/PLAN updated.
 Next bead standby: monitoring Prom scrape rollout to confirm dashboards/alerts consume mdwb_* metrics; ready to pick up tkq slice once telemetry consumers give the green light.

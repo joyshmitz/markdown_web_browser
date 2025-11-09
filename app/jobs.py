@@ -77,6 +77,8 @@ class JobSnapshot(TypedDict, total=False):
     error: str | None
     profile_id: str | None
     cache_hit: bool
+    seam_marker_count: int | None
+    seam_hash_count: int | None
 
 
 def build_initial_snapshot(
@@ -108,6 +110,8 @@ def build_initial_snapshot(
         snapshot["profile_id"] = profile_id
     if cache_hit:
         snapshot["cache_hit"] = True
+    snapshot["seam_marker_count"] = None
+    snapshot["seam_hash_count"] = None
     if manifest:
         manifest.profile_id = profile_id
         manifest.cache_hit = cache_hit
@@ -207,10 +211,7 @@ class JobManager:
         return snapshot
 
     def get_snapshot(self, job_id: str) -> JobSnapshot:
-        snapshot = self._snapshots.get(job_id)
-        if snapshot is None:
-            raise KeyError(f"Job {job_id} not found")
-        return snapshot.copy()
+        return self._snapshot_payload(job_id)
 
     def subscribe(self, job_id: str) -> asyncio.Queue[JobSnapshot]:
         if job_id not in self._snapshots:
@@ -426,6 +427,16 @@ class JobManager:
         if snapshot is None:
             raise KeyError(f"Job {job_id} not found")
         payload = snapshot.copy()
+        record = self.store.fetch_run(job_id)
+        if record:
+            if record.seam_marker_count is not None:
+                payload["seam_marker_count"] = record.seam_marker_count
+            else:
+                payload.pop("seam_marker_count", None)
+            if record.seam_hash_count is not None:
+                payload["seam_hash_count"] = record.seam_hash_count
+            else:
+                payload.pop("seam_hash_count", None)
         state = payload.get("state")
         if isinstance(state, JobState):
             payload["state"] = state.value
@@ -478,7 +489,10 @@ class JobManager:
         assists = getattr(manifest, "dom_assists", None)
         if not assists:
             return
-        summary = summarize_dom_assists(assists)
+        summary = summarize_dom_assists(
+            assists,
+            tiles_total=getattr(manifest, "tiles_total", None),
+        )
         if summary:
             self._record_custom_event(job_id, "dom_assist", summary)
 
@@ -643,7 +657,10 @@ async def _run_ocr_pipeline(
             }
             for entry in dom_assists
         ]
-        summary = summarize_dom_assists(capture_result.manifest.dom_assists)
+        summary = summarize_dom_assists(
+            capture_result.manifest.dom_assists,
+            tiles_total=getattr(capture_result.manifest, "tiles_total", None),
+        )
         if summary:
             manifest_any = cast(Any, capture_result.manifest)
             manifest_any.dom_assist_summary = summary

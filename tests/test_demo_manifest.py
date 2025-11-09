@@ -63,3 +63,22 @@ def test_snapshot_events_surface_dom_assist_summary():
     assert summary["count"] == 2
     assert summary["reason_counts"][0]["count"] == 1
     assert "reasons" in summary
+
+
+def test_snapshot_events_use_dom_assist_summary_field():
+    snapshot = {
+        "state": "DONE",
+        "manifest": {
+            "dom_assist_summary": {
+                "count": 3,
+                "reasons": ["low-alpha", "punctuation"],
+            }
+        },
+    }
+
+    events = dict(_snapshot_events(snapshot))
+
+    assert "dom_assist" in events
+    summary = json.loads(events["dom_assist"])
+    assert summary["count"] == 3
+    assert summary["reasons"] == ["low-alpha", "punctuation"]

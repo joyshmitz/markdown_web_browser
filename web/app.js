@@ -1699,7 +1699,9 @@ function renderDomAssistSummary(summaryEl, tableEl, summary) {
       summaryEl.textContent = 'No DOM assists recorded yet.';
       summaryEl.classList.add('placeholder');
     } else {
-      summaryEl.textContent = `${summary.count} assist${summary.count === 1 ? '' : 's'} · ${summary.reasons?.length || 0} reason${summary.reasons?.length === 1 ? '' : 's'}`;
+      const reasonCount = summary.reasons?.length || 0;
+      const density = typeof summary.assist_density === 'number' ? ` · density ${(summary.assist_density * 100).toFixed(1)}%` : '';
+      summaryEl.textContent = `${summary.count} assist${summary.count === 1 ? '' : 's'} · ${reasonCount} reason${reasonCount === 1 ? '' : 's'}${density}`;
       summaryEl.classList.remove('placeholder');
     }
   }
@@ -1719,9 +1721,9 @@ function renderDomAssistSummary(summaryEl, tableEl, summary) {
     : '';
   const table = [
     '<table>',
-    '<thead><tr><th>Reason</th><th>Count</th></tr></thead>',
+    '<thead><tr><th>Reason</th><th>Count</th><th>Ratio</th></tr></thead>',
     '<tbody>',
-    ...rows.map((entry) => `<tr><td>${escapeHtml(String(entry.reason ?? 'unknown'))}</td><td>${entry.count ?? ''}</td></tr>`),
+    ...rows.map((entry) => `<tr><td>${escapeHtml(String(entry.reason ?? 'unknown'))}</td><td>${entry.count ?? ''}</td><td>${formatRatio(entry.ratio)}</td></tr>`),
     '</tbody></table>',
     sampleRow,
   ].join('');
@@ -1733,4 +1735,11 @@ function escapeHtml(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function formatRatio(value) {
+  if (typeof value !== 'number') {
+    return '';
+  }
+  return `${(value * 100).toFixed(1)}%`;
 }
