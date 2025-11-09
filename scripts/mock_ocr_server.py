@@ -13,13 +13,17 @@ from datetime import datetime
 app = FastAPI(title="Mock olmOCR Server")
 
 
+class OCRInput(BaseModel):
+    id: str
+    image: str  # Base64 encoded image
+
+class OCROptions(BaseModel):
+    fp8: bool = False
+
 class OCRRequest(BaseModel):
-    images: List[str]  # Base64 encoded images
     model: str = "olmOCR-2-7B-1025-FP8"
-    temperature: float = 0.0
-    max_new_tokens: int = 2048
-    do_sample: bool = False
-    return_logprobs: bool = False
+    input: List[OCRInput]  # List of images with IDs
+    options: OCROptions = OCROptions()
 
 
 class OCRResponse(BaseModel):
@@ -27,14 +31,15 @@ class OCRResponse(BaseModel):
 
 
 @app.post("/v1/completions")
+@app.post("/v1/completions/v1/ocr")
 async def process_ocr(request: OCRRequest):
     """Mock OCR endpoint that returns placeholder text."""
 
     responses = []
 
-    for idx, image_b64 in enumerate(request.images):
+    for idx, input_item in enumerate(request.input):
         # Generate deterministic fake content based on image hash
-        image_hash = hashlib.sha256(image_b64.encode()).hexdigest()[:8]
+        image_hash = hashlib.sha256(input_item.image.encode()).hexdigest()[:8]
 
         # Simulate realistic OCR output
         mock_text = f"""# Example Domain
@@ -44,7 +49,7 @@ This domain is for use in illustrative examples in documents. You may use this d
 [More information...](https://www.iana.org/domains/example)
 
 ---
-*OCR processed tile {idx + 1} (hash: {image_hash})*"""
+*OCR processed tile {input_item.id} (hash: {image_hash})*"""
 
         responses.append({
             "index": idx,
@@ -53,7 +58,7 @@ This domain is for use in illustrative examples in documents. You may use this d
                 "content": mock_text
             },
             "finish_reason": "stop",
-            "logprobs": None if not request.return_logprobs else {"content": []},
+            "logprobs": None,
         })
 
     return OCRResponse(choices=responses)
