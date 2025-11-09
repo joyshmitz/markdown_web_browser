@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -83,11 +84,15 @@ class TokenBucket:
     def get_stats(self) -> Dict[str, float]:
         """Get current bucket statistics."""
         self._refill()
+        # Prevent division by zero if capacity is 0
+        utilization = (
+            1.0 - (self.tokens / self.capacity) if self.capacity > 0 else 0.0
+        )
         return {
             "tokens": self.tokens,
             "capacity": self.capacity,
             "refill_rate": self.refill_rate,
-            "utilization": 1.0 - (self.tokens / self.capacity),
+            "utilization": utilization,
         }
 
 
@@ -101,9 +106,17 @@ class RateLimiter:
         """Initialize rate limiter.
 
         Args:
-            requests_per_minute: Sustained rate limit
+            requests_per_minute: Sustained rate limit (must be positive)
             burst_capacity: Maximum burst capacity (defaults to requests_per_minute)
+
+        Raises:
+            ValueError: If requests_per_minute is not positive
         """
+        if requests_per_minute <= 0:
+            raise ValueError(
+                f"requests_per_minute must be positive, got {requests_per_minute}"
+            )
+
         self.requests_per_minute = requests_per_minute
         self.requests_per_second = requests_per_minute / 60.0
 
@@ -132,7 +145,11 @@ class RateLimiter:
         """Check if request is allowed under rate limit.
 
         Returns:
-            (allowed, stats) tuple where stats contains rate limit info
+            (allowed, stats) tuple where stats contains rate limit info:
+                - limit: Maximum requests per minute
+                - remaining: Current tokens available
+                - reset: Unix timestamp when bucket will be completely full
+                - retry_after: (if not allowed) Seconds to wait before retrying
         """
         bucket = self._get_bucket(key)
         allowed = bucket.consume(tokens)
@@ -140,9 +157,14 @@ class RateLimiter:
         stats = bucket.get_stats()
         stats["limit"] = self.requests_per_minute
         stats["remaining"] = int(bucket.tokens)
-        stats["reset"] = int(time.time() + bucket.time_until_available(self.burst_capacity))
+        # Reset = when bucket will be completely full (burst capacity restored)
+        # Note: You may still have tokens available before this time
+        stats["reset"] = int(
+            time.time() + bucket.time_until_available(self.burst_capacity)
+        )
 
         if not allowed:
+            # Retry after = when next single token will be available
             stats["retry_after"] = int(bucket.time_until_available(1)) + 1
 
         return allowed, stats
@@ -169,16 +191,41 @@ class RateLimiter:
 # Global rate limiter instance (for single-process deployments)
 # For multi-worker deployments, use Redis-backed rate limiting
 _global_limiter: Optional[RateLimiter] = None
+_limiter_lock = threading.Lock()
 
 
 def get_rate_limiter(settings: Settings | None = None) -> RateLimiter:
-    """Get or create the global rate limiter instance."""
+    """Get or create the global rate limiter instance.
+
+    Thread-safe singleton implementation using double-checked locking pattern.
+
+    Args:
+        settings: Optional settings to configure rate limiter.
+                  Only used on first initialization, ignored afterwards.
+
+    Returns:
+        RateLimiter: Global rate limiter instance
+    """
     global _global_limiter
 
-    if _global_limiter is None:
-        # Default to 60 requests per minute
-        # In production, this should be configurable per API key
-        _global_limiter = RateLimiter(requests_per_minute=60)
+    # Fast path - if already initialized, return immediately without locking
+    if _global_limiter is not None:
+        return _global_limiter
+
+    # Slow path - need to initialize, acquire lock
+    with _limiter_lock:
+        # Double-check: another thread might have initialized while we waited for lock
+        if _global_limiter is None:
+            from app.settings import settings as global_settings
+
+            active_settings = settings or global_settings
+
+            # Get rate limit from settings, default to 60 requests per minute
+            requests_per_minute = getattr(
+                active_settings, "RATE_LIMIT_PER_MINUTE", 60
+            )
+
+            _global_limiter = RateLimiter(requests_per_minute=requests_per_minute)
 
     return _global_limiter
 
