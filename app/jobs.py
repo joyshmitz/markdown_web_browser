@@ -215,12 +215,13 @@ class JobManager:
         # Validate URL format
         try:
             parsed = urlparse(url)
-            if not parsed.scheme or not parsed.netloc:
-                msg = f"Manifest URL '{url}' is not a valid URL"
-                raise ValueError(msg)
         except Exception as exc:
             msg = f"Manifest URL '{url}' is malformed: {exc}"
             raise ValueError(msg) from exc
+
+        if not parsed.scheme or not parsed.netloc:
+            msg = f"Manifest URL '{url}' is not a valid URL"
+            raise ValueError(msg)
 
         # Validate optional profile_id
         profile_id = manifest.get("profile_id")
@@ -310,7 +311,7 @@ class JobManager:
         cutoff_time = now - timedelta(hours=retention_hours)
         jobs_to_clean = []
 
-        for job_id, snapshot in self._snapshots.items():
+        for job_id, snapshot in list(self._snapshots.items()):
             # Only clean up completed jobs
             if snapshot["state"] not in (JobState.DONE, JobState.FAILED):
                 continue
@@ -341,6 +342,8 @@ class JobManager:
             self._webhooks.pop(job_id, None)
             self._pending_webhooks.pop(job_id, None)
             self._cache_keys.pop(job_id, None)
+            # Defensive cleanup of tasks (should already be cleaned up, but just in case)
+            self._tasks.pop(job_id, None)
 
         if jobs_to_clean:
             LOGGER.info("Cleaned up memory for %d completed jobs", len(jobs_to_clean))
