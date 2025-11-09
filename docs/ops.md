@@ -50,6 +50,8 @@ uv run python scripts/run_smoke.py \
   (add `--no-weekly` if you only care about summary/manifest/metrics). Pass `--json` when you want a structured payload
   (fields: `status`, `missing`, `root`, `weekly_required`, `run_date`) and rely on the exit code instead of parsing text.
   The command exits non-zero when any required pointer file is missing, making it ideal for CI/dashboards.
+  Both `show` and `check` also exit when `latest.txt` exists but is empty; refresh the pointers via
+  `scripts/update_smoke_pointers.py <run-dir>` before rerunning the CLI so the run date is always recorded.
 
 ### Prerequisites
 - `/jobs` API available on `API_BASE_URL` with credentials in `.env`.
@@ -90,6 +92,24 @@ Publish the summary in Monday’s ops update and attach the most recent
 > bootstrap the CUDA 12.6 stack with `scripts/setup_olmocr_cuda12.sh` first. The script installs
 > the required CUDA/GCC toolchain, provisions `.venv`, and runs a CLI smoke test using the
 > settings documented in `docs/olmocr_cli_tool_documentation.md`.
+
+### Seam marker telemetry (bd-md3)
+- `benchmarks/production/weekly_summary.json` now records seam health for each category under
+  `categories[].seam_markers`: `count.p50/p95` tracks how many stitched seams the average run produced,
+  while `hashes.p50/p95` tracks how many unique watermark hashes we saw (duplicate hashes across tiles
+  often indicate scroll glitches). `scripts/run_smoke.py` writes these values automatically, and
+  `scripts/show_latest_smoke.py --weekly --json` exposes them for dashboards/automation.
+- Wire Grafana panels directly to those JSON fields (or to the rendered CLI output) so ops can
+  spot regressions without opening manifests. A simple approach is to have CI upload the weekly
+  summary as an artifact, then use the JSON API data source with the path
+  `categories[?(@.name=="docs_articles")].seam_markers.count.p95`. Alert whenever seam counts jump
+  2× above their seven-day p95 baseline or when unique hashes collapse toward zero (duplicate seams).
+- Include the seam markers row in Monday’s ops update: copy the `p50/p95` pairs from the CLI output
+  (or run `jq '.categories[] | {name, seam: .seam_markers}' benchmarks/production/weekly_summary.json`)
+  so reviewers understand whether the latest regressions stem from stitching vs. OCR latency.
+- When an alert fires, grab the affected job id from the manifest index, run
+  `mdwb diag <job_id>` (or `mdwb jobs show`) to print the seam marker table, and attach it to the bead
+  or Agent Mail thread so everyone has the hashes/tiles handy for repro.
 
 ## Troubleshooting
 - **API unreachable**: make sure `API_BASE_URL` resolves from the machine running the
@@ -160,6 +180,9 @@ The CLI command above reads `.env` for `API_BASE_URL`/`PROMETHEUS_PORT` (overrid
 `failed_count`, `total_duration_ms`, and per-target entries with `duration_ms`/errors) or `--no-include-exporter` when only the primary `/metrics`
 endpoint is exposed. `scripts/prom_scrape_check.py` simply wraps the same CLI for older
 automation; prefer calling `check_metrics.py` directly.
+When you pass `--check-weekly --json`, the payload always includes a `weekly` block with `status`,
+`summary_path`, and the recorded failures—even when the weekly summary cannot be read—so CI logs
+can quote the exact reason the health check failed.
 - Optional automation toggles:
   - `MDWB_CHECK_METRICS=1` (and optionally `CHECK_METRICS_TIMEOUT=<seconds>`) appends the Prometheus probe after
     the lint/type/pytest/Playwright stages so CI mirrors manual smoke commands.

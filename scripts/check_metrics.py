@@ -171,6 +171,11 @@ def run_check(
         except Exception as exc:  # noqa: BLE001
             message = f"[FAIL] Weekly SLO check failed: {exc}"
             errors.append(message)
+            weekly_result = {
+                "status": "error",
+                "summary_path": str(weekly_summary),
+                "failures": [str(exc)],
+            }
             if not json_output:
                 typer.echo(message)
 

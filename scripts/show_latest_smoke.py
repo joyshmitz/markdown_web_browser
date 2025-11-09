@@ -44,7 +44,11 @@ def _ensure_pointer(paths: SmokePaths) -> str:
     if not paths.pointer.exists():
         typer.secho("No smoke runs have produced pointer files yet.", fg=typer.colors.YELLOW)
         raise typer.Exit(1)
-    return paths.pointer.read_text(encoding="utf-8").strip()
+    value = paths.pointer.read_text(encoding="utf-8").strip()
+    if not value:
+        typer.secho("latest.txt is empty; rerun the smoke or refresh pointers.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    return value
 
 
 def _format_ms(value: Any) -> str:

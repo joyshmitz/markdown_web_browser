@@ -312,6 +312,7 @@ _2025-11-08 — RedSnow (bd-3aa) added the original `MDWB_RUN_E2E=1` toggle to `
 _2025-11-08 — RedSnow (bd-5q6) documented the rich CLI FlowLogger output + toggle usage in README/docs/ops so ops/CI knew how to capture the panels/logs when the suite ran; those docs now point at `MDWB_RUN_E2E_RICH` following the bd-rlp changes._
 _2025-11-08 — RedSnow (bd-4zy) expanded ops pytest coverage (update_smoke_pointers env/root behavior, show_latest_smoke failure/JSON paths, check_metrics console timing) and wired the new tests into `scripts/run_checks.sh` so ops tooling regressions surface in CI. WhiteDog followed up with additional show_latest_smoke JSON-pointer tests + check_metrics summary assertions and synced README/docs accordingly._
 _2025-11-08 — WhiteDog (bd-4zy follow-up) added missing pointer/weekly JSON tests for `scripts/show_latest_smoke.py`, ensured `README.md`/`docs/ops.md` describe the new `--json` outputs and pytest summary artifacts emitted by `scripts/run_checks.sh`, and added JSON-summary coverage to `tests/test_check_metrics.py` so `total_duration_ms` matches per-target timings._
+_2025-11-09 — GreenLake (bd-4zy) hardened `scripts/show_latest_smoke.py` so blank `latest.txt` pointers now fail fast, added seam-marker + pointer tests, and updated `scripts/check_metrics.py` + tests so `--check-weekly --json` always emits a `weekly` block (status/summary_path/failures) even when the summary cannot be read; README/docs/ops capture the new guardrails._
 _2025-11-08 — PinkLake (bd-4dq) added optional session reuse to the mdwb CLI (`--reuse-session`) and wired the agent starter scripts to reuse a single HTTP client by default so submit/poll/fetch no longer renegotiate TLS/H2 for every phase._
 - SSE: `event:state`, `event:tile`, `event:warning`
 - JSONLines: newline-delimited objects mirroring SSE for CLI `--follow`
@@ -741,6 +742,7 @@ _2025-11-08 — PinkCreek (bd-ug0) designing ops automation: smoke/latency job r
 - **Budget attribution:** Manifest fields (`capture_ms`, `tiling_ms`, `ocr_ms`, `stitch_ms`) roll up into BigQuery/duckdb so you can attribute regressions to either Playwright upgrades or model changes.
 _2025-11-08 — BlueMountain (bd-md3) opened to automate these SLO rollups + dashboards so error-budget tracking isn’t manual._
 _2025-11-09 — BrownHill (bd-md3) extended `scripts/run_smoke.py` + `scripts/show_latest_smoke.py` to record capture/total/OCR p95/p99 values, flag SLO breaches per category, and added `scripts/check_metrics.py --check-weekly` so CI/on-call can fail fast when the weekly summary exceeds its 2×p95 budgets._
+_2025-11-09 — PinkHill (bd-md3) documented the seam marker telemetry workflow so ops can plug the `weekly_summary.json` seam count/hash percentiles into Grafana/Prometheus alongside the capture/OCR SLO panels (README/docs/ops updated)._
 
 ### 20.2 Monitoring & Alerting
 - **Metrics:** expose `/metrics` with Prometheus counters and histograms (tiles_processed_total, ocr_retry_total, capture_duration_seconds_bucket). Include labels for model, CfT version, and concurrency tier.

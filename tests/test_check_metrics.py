@@ -252,6 +252,45 @@ def test_run_check_weekly_failure(tmp_path, monkeypatch):
     assert "Weekly SLO violations" in result.output
 
 
+def test_run_check_json_weekly_success(tmp_path, monkeypatch):
+    summary_path = tmp_path / "weekly.json"
+    summary_path.write_text(
+        json.dumps({"categories": [{"name": "Docs", "slo": {"capture_ok": True, "ocr_ok": True}}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_metrics, "_probe", lambda url, timeout: 1.0)
+    monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 0}))
+
+    result = runner.invoke(
+        check_metrics.cli,
+        ["--json", "--no-include-exporter", "--check-weekly", "--weekly-summary", str(summary_path)],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["weekly"]["status"] == "ok"
+    assert payload["weekly"]["summary_path"] == str(summary_path)
+    assert payload["weekly"]["failures"] == []
+
+
+def test_run_check_json_weekly_missing_file(tmp_path, monkeypatch):
+    summary_path = tmp_path / "missing.json"
+    monkeypatch.setattr(check_metrics, "_probe", lambda url, timeout: 1.0)
+    monkeypatch.setattr(check_metrics, "_load_config", lambda: StubConfig({"API_BASE_URL": "http://api", "PROMETHEUS_PORT": 0}))
+
+    result = runner.invoke(
+        check_metrics.cli,
+        ["--json", "--no-include-exporter", "--check-weekly", "--weekly-summary", str(summary_path)],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["weekly"]["status"] == "error"
+    assert payload["weekly"]["summary_path"] == str(summary_path)
+    assert payload["weekly"]["failures"]
+    assert "weekly summary not found" in payload["weekly"]["failures"][0]
+
+
 def test_run_check_json_reports_failures(monkeypatch):
     def fake_probe(url: str, timeout: float) -> None:  # noqa: ANN001
         raise RuntimeError("boom")

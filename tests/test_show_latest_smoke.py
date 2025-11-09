@@ -17,7 +17,13 @@ def _load_cli():
     return importlib.import_module(MODULE_NAME)
 
 
-def _write_pointer_files(root: Path, *, include_weekly: bool = True, over_budget: bool = False) -> None:
+def _write_pointer_files(
+    root: Path,
+    *,
+    include_weekly: bool = True,
+    over_budget: bool = False,
+    use_seam_marker_list: bool = False,
+) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "latest.txt").write_text("2025-11-08\n", encoding="utf-8")
     (root / "latest_summary.md").write_text("# Summary\n\nSmoke output", encoding="utf-8")
@@ -39,6 +45,14 @@ def _write_pointer_files(root: Path, *, include_weekly: bool = True, over_budget
             "total_ms": 4200,
         },
     ]
+    if use_seam_marker_list:
+        manifest_rows[0].pop("seam_marker_count", None)
+        manifest_rows[0].pop("seam_hash_count", None)
+        manifest_rows[0]["seam_markers"] = [
+            {"hash": "tile-a"},
+            {"hash": "tile-b"},
+            {"hash": "tile-a"},  # duplicate hash exercises unique counting
+        ]
     (root / "latest_manifest_index.json").write_text(json.dumps(manifest_rows), encoding="utf-8")
     metrics_payload = {
         "date": "2025-11-08",
@@ -151,6 +165,7 @@ def test_show_latest_smoke_json_output(tmp_path: Path):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["run_date"] == "2025-11-08"
+    assert payload["root"] == str(tmp_path)
     assert payload["summary_markdown"].startswith("# Summary")
     assert len(payload["manifest"]) == 1
     assert payload["manifest"][0]["overlap_match_ratio"] == 0.9
@@ -182,6 +197,21 @@ def test_show_latest_smoke_manifest_missing_json(tmp_path: Path):
     assert "latest_manifest_index" in result.output
 
 
+def test_show_latest_smoke_json_summarizes_raw_seam_markers(tmp_path: Path):
+    _write_pointer_files(tmp_path, use_seam_marker_list=True)
+    result = _invoke_show(
+        tmp_path,
+        "--manifest",
+        "--json",
+        "--no-summary",
+        "--no-weekly",
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["manifest"][0]["seam_marker_count"] == 3
+    assert payload["manifest"][0]["seam_hash_count"] == 2
+
+
 def test_show_latest_smoke_metrics_missing_json(tmp_path: Path):
     _write_pointer_files(tmp_path)
     (tmp_path / "latest_metrics.json").unlink()
@@ -196,6 +226,14 @@ def test_show_latest_smoke_metrics_only(tmp_path: Path):
     assert result.exit_code == 0
     assert "Aggregated Metrics" in result.output
     assert "categories" in result.output
+
+
+def test_show_latest_smoke_fails_when_pointer_empty(tmp_path: Path):
+    _write_pointer_files(tmp_path)
+    (tmp_path / "latest.txt").write_text("   \n", encoding="utf-8")
+    result = _invoke_show(tmp_path, "--manifest")
+    assert result.exit_code == 1
+    assert "latest.txt is empty" in result.output
 
 
 def test_show_latest_smoke_json_without_metrics(tmp_path: Path):
@@ -300,6 +338,15 @@ def test_show_latest_smoke_check_pointer_missing(tmp_path: Path):
     assert result.exit_code == 1
     assert "Missing smoke artifacts" in result.output
     assert "pointer" in result.output
+
+
+def test_show_latest_smoke_check_fails_when_pointer_empty(tmp_path: Path):
+    module = _load_cli()
+    _write_pointer_files(tmp_path)
+    (tmp_path / "latest.txt").write_text("\n", encoding="utf-8")
+    result = runner.invoke(module.app, ["check", "--root", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "latest.txt is empty" in result.output
 
 
 def test_show_latest_smoke_show_missing_summary(tmp_path: Path):
