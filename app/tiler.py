@@ -78,7 +78,12 @@ def _slice_sync(
     target_long_side_px: int,
 ) -> List[TileSlice]:
     vips = _require_pyvips()
-    image = vips.Image.new_from_buffer(image_bytes, "", access="sequential")
+    # Avoid sequential access which can cause issues with some PNG data
+    try:
+        image = vips.Image.new_from_buffer(image_bytes, "")
+    except Exception as e:
+        # Fallback to sequential if needed
+        image = vips.Image.new_from_buffer(image_bytes, "", access="sequential")
 
     # Downscale only when the width exceeds the 1288 px guidance; height is handled via tiling.
     scale = 1.0
@@ -93,7 +98,8 @@ def _slice_sync(
     overlap_px = min(overlap_px, target_long_side_px)
 
     if height <= target_long_side_px:
-        png_bytes = image.write_to_buffer(".png", **_PNG_ENCODE_ARGS)
+        # Use pngsave_buffer for more reliable PNG encoding
+        png_bytes = image.pngsave_buffer(**_PNG_ENCODE_ARGS)
         top_sha = _overlap_sha(image, position="top", overlap_px=overlap_px)
         bottom_sha = _overlap_sha(image, position="bottom", overlap_px=overlap_px)
         tiles.append(
@@ -127,7 +133,8 @@ def _slice_sync(
             tile_height = height - cursor
 
         cropped = image.crop(0, cursor, width, tile_height)
-        png_bytes = cropped.write_to_buffer(".png", **_PNG_ENCODE_ARGS)
+        # Use pngsave_buffer for more reliable PNG encoding
+        png_bytes = cropped.pngsave_buffer(**_PNG_ENCODE_ARGS)
         top_sha = _overlap_sha(cropped, position="top", overlap_px=overlap_px)
         bottom_sha = _overlap_sha(cropped, position="bottom", overlap_px=overlap_px)
         tiles.append(
@@ -175,7 +182,8 @@ def _overlap_sha(image: Any, *, position: str, overlap_px: int) -> Optional[str]
         y = max(0, image.height - sample_height)
         strip = image.crop(0, y, image.width, sample_height)
 
-    png_bytes = strip.write_to_buffer(".png", **_PNG_ENCODE_ARGS)
+    # Use pngsave_buffer for more reliable PNG encoding
+    png_bytes = strip.pngsave_buffer(**_PNG_ENCODE_ARGS)
     return hashlib.sha256(png_bytes).hexdigest()
 
 
@@ -187,7 +195,8 @@ def validate_tiles(tiles: Iterable[TileSlice]) -> None:
         if hashlib.sha256(tile.png_bytes).hexdigest() != tile.sha256:
             raise ValueError(f"Tile {tile.index} checksum mismatch")
         try:
-            image = vips.Image.new_from_buffer(tile.png_bytes, "", access="sequential")
+            # Remove sequential access which can cause issues with some PNG data
+            image = vips.Image.new_from_buffer(tile.png_bytes, "")
         except Exception as exc:  # pragma: no cover - depends on corrupted data
             raise ValueError(f"Tile {tile.index} PNG decode failed") from exc
         if image.width != tile.width or image.height != tile.height:

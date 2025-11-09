@@ -2,6 +2,39 @@
 
 Render any URL with a deterministic Chrome-for-Testing profile, tile the page into OCR-friendly slices, and stream Markdown + provenance back to agents, the web UI, and automation clients.
 
+## 🚀 Quick Install (One Command)
+
+Get started in under 2 minutes with our automated installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yourusername/markdown_web_browser/main/install.sh | bash -s -- --yes
+```
+
+**What this installer does for you:**
+
+1. **Checks your system** - Detects your OS (Ubuntu/Debian, macOS, RHEL, Arch)
+2. **Installs uv package manager** - The modern Python package manager from Astral
+3. **Installs system dependencies** - Automatically installs libvips (image processing library)
+4. **Clones the repository** - Downloads the latest Markdown Web Browser code
+5. **Sets up Python 3.11 environment** - Creates isolated virtual environment with all dependencies
+6. **Installs Playwright browsers** - Downloads Chromium for headless browsing
+7. **Configures environment** - Sets up `.env` file with default settings
+8. **Runs verification tests** - Ensures everything is working correctly
+9. **Creates launcher script** - Provides a convenient `mdwb` command for CLI usage
+
+For interactive installation or custom options:
+```bash
+# Interactive mode (prompts for each step)
+curl -fsSL https://raw.githubusercontent.com/yourusername/markdown_web_browser/main/install.sh | bash
+
+# Custom directory with OCR API key
+curl -fsSL https://raw.githubusercontent.com/yourusername/markdown_web_browser/main/install.sh | bash -s -- \
+  --dir=/opt/mdwb --ocr-key=sk-YOUR-API-KEY
+
+# See all options
+curl -fsSL https://raw.githubusercontent.com/yourusername/markdown_web_browser/main/install.sh | bash -s -- --help
+```
+
 ## Why it exists
 - **Screenshot-first:** Captures exactly what users see—no PDF/print CSS surprises.
 - **Deterministic + auditable:** Every run emits tiles, `out.md`, `links.json`, and `manifest.json` (with CfT label/build, Playwright version, screenshot style hash, warnings, and timings).
@@ -19,24 +52,6 @@ Render any URL with a deterministic Chrome-for-Testing profile, tile the page in
 8. The browser shell relies on the HTMX SSE extension, so real-time updates (state, manifest, warning pills) are declaratively wired via `hx-ext="sse"` without bespoke `EventSource` code.
 
 See `PLAN_TO_IMPLEMENT_MARKDOWN_WEB_BROWSER_PROJECT.md` §§2–5, 19 for the full breakdown.
-
-## Quick Install (One-Line)
-
-For a fully automated installation including all dependencies:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/markdown_web_browser/main/install.sh | bash -s -- --yes
-```
-
-This will:
-- Install uv package manager
-- Install system dependencies (libvips)
-- Clone the repository
-- Setup Python environment
-- Install Playwright browsers
-- Configure the environment
-
-For more options: `curl -fsSL .../install.sh | bash -s -- --help`
 
 ## Manual Installation
 1. **Install prerequisites**
