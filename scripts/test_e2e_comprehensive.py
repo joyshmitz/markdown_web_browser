@@ -1153,16 +1153,19 @@ class ComprehensiveTestRunner:
                         test_case.artifacts["job_id"] = job_id
 
                         # Monitor job progress
-                        status.update(f"[cyan]Monitoring job {job_id[:8]}...[/cyan]")
+                        if self.verbose:
+                            self.console.print(f"[cyan]Monitoring job {job_id[:8]}...[/cyan]")
                         final_state = await self._monitor_job(client, job_id, test_case, status)
 
                         # Get final results
                         if final_state == "DONE":
-                            status.update(f"[cyan]Retrieving artifacts...[/cyan]")
+                            if self.verbose:
+                                self.console.print(f"[cyan]Retrieving artifacts...[/cyan]")
                             await self._retrieve_artifacts(client, job_id, test_case)
 
                             # Run validations
-                            status.update(f"[cyan]Running validations...[/cyan]")
+                            if self.verbose:
+                                self.console.print(f"[cyan]Running validations...[/cyan]")
                             response_data = {
                                 "status_code": 200,
                                 "json_response": test_case.artifacts.get("job_data", {}),
@@ -1225,7 +1228,7 @@ class ComprehensiveTestRunner:
             ))
 
         finally:
-            status.stop()
+            pass  # Status no longer needed
             test_case.metrics.end_time = time.time()
 
         return test_case
@@ -1266,11 +1269,14 @@ class ComprehensiveTestRunner:
                         total = progress.get("total", 0)
                         if total > 0:
                             pct = (done / total) * 100
-                            status.update(f"[cyan]{test_case.name}: {state} ({pct:.0f}%)[/cyan]")
+                            if self.verbose:
+                                self.console.print(f"[cyan]{test_case.name}: {state} ({pct:.0f}%)[/cyan]")
                         else:
-                            status.update(f"[cyan]{test_case.name}: {state}[/cyan]")
+                            if self.verbose:
+                                self.console.print(f"[cyan]{test_case.name}: {state}[/cyan]")
                     else:
-                        status.update(f"[cyan]{test_case.name}: {state}[/cyan]")
+                        if self.verbose:
+                            self.console.print(f"[cyan]{test_case.name}: {state}[/cyan]")
 
                     # Track state transitions
                     if state != last_state:
