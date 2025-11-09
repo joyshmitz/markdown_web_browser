@@ -1155,7 +1155,7 @@ class ComprehensiveTestRunner:
                         # Monitor job progress
                         if self.verbose:
                             self.console.print(f"[cyan]Monitoring job {job_id[:8]}...[/cyan]")
-                        final_state = await self._monitor_job(client, job_id, test_case, status)
+                        final_state = await self._monitor_job(client, job_id, test_case)
 
                         # Get final results
                         if final_state == "DONE":
@@ -1237,8 +1237,7 @@ class ComprehensiveTestRunner:
         self,
         client: httpx.AsyncClient,
         job_id: str,
-        test_case: TestCase,
-        status: Status
+        test_case: TestCase
     ) -> str:
         """Monitor job progress with detailed metrics."""
 

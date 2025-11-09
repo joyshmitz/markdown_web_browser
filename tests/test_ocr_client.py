@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import io
-import os
 from typing import Iterator
 
 import pytest
+from decouple import Config as DecoupleConfig, RepositoryEnv
 from PIL import Image, ImageDraw, ImageFont
 from playwright.async_api import async_playwright
 
 from app.ocr_client import OCRRequest, reset_quota_tracker, submit_tiles
 from app.settings import get_settings
+
+
+# Load environment variables using decouple
+decouple_config = DecoupleConfig(RepositoryEnv(".env"))
+OLMOCR_API_KEY = decouple_config("OLMOCR_API_KEY", default="")
 
 
 @pytest.fixture(autouse=True)
@@ -66,7 +71,7 @@ def create_real_test_image(width: int = 1280, height: int = 720, text: str = "Te
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not os.getenv("OLMOCR_API_KEY"), reason="Requires real OCR API key")
+@pytest.mark.skipif(not OLMOCR_API_KEY, reason="Requires real OCR API key")
 async def test_real_ocr_api_single_image():
     """Test with real OCR API using a real image."""
     settings = get_settings()
@@ -102,7 +107,7 @@ async def test_real_ocr_api_single_image():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not os.getenv("OLMOCR_API_KEY"), reason="Requires real OCR API key")
+@pytest.mark.skipif(not OLMOCR_API_KEY, reason="Requires real OCR API key")
 async def test_real_ocr_api_multiple_images():
     """Test with real OCR API using multiple real images."""
     settings = get_settings()
@@ -135,7 +140,7 @@ async def test_real_ocr_api_multiple_images():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not os.getenv("OLMOCR_API_KEY"), reason="Requires real OCR API key")
+@pytest.mark.skipif(not OLMOCR_API_KEY, reason="Requires real OCR API key")
 async def test_real_ocr_api_with_actual_webpage_screenshot():
     """Test with a real screenshot from an actual website."""
     settings = get_settings()
@@ -180,7 +185,7 @@ async def test_real_ocr_api_with_actual_webpage_screenshot():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not os.getenv("OLMOCR_API_KEY"), reason="Requires real OCR API key")
+@pytest.mark.skipif(not OLMOCR_API_KEY, reason="Requires real OCR API key")
 async def test_real_ocr_api_error_handling():
     """Test error handling with real OCR API."""
     settings = get_settings()
@@ -205,7 +210,7 @@ async def test_real_ocr_api_error_handling():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not os.getenv("OLMOCR_API_KEY"), reason="Requires real OCR API key")
+@pytest.mark.skipif(not OLMOCR_API_KEY, reason="Requires real OCR API key")
 async def test_real_ocr_api_concurrent_requests():
     """Test concurrent requests to real OCR API."""
     settings = get_settings()

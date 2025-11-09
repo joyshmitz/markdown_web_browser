@@ -399,7 +399,7 @@ setup_config() {
 
     # Set OCR API key if provided
     if [ ! -z "$OCR_API_KEY" ]; then
-        if grep -q "^OLMOCR_API_KEY=" .env; then
+        if [ -f ".env" ] && grep -q "^OLMOCR_API_KEY=" .env; then
             # Safe approach: remove old line, append new (handles special chars in API key)
             grep -v "^OLMOCR_API_KEY=" .env > .env.tmp || true
             mv .env.tmp .env
@@ -414,7 +414,7 @@ setup_config() {
         print_color "$YELLOW" "⚠  IMPORTANT: OCR API key not configured"
         print_color "$YELLOW" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         print_color "$YELLOW" "  The system REQUIRES an olmOCR API key to function."
-        print_color "$YELLOW" "  Add it to $INSTALL_DIR/.env before running:"
+        print_color "$YELLOW" "  Add it to .env before running:"
         print_color "$YELLOW" "    OLMOCR_API_KEY=sk-your-api-key-here"
         print_color "$YELLOW" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     fi
@@ -485,7 +485,8 @@ run_tests() {
 
 # Function to create launcher script
 create_launcher() {
-    local launcher_path="$INSTALL_DIR/mdwb"
+    # We're already in INSTALL_DIR, so just use relative path
+    local launcher_path="./mdwb"
 
     cat > "$launcher_path" << 'EOF'
 #!/usr/bin/env bash
@@ -500,9 +501,12 @@ EOF
 
     chmod +x "$launcher_path"
 
-    print_color "$GREEN" "✓ Created launcher script: $launcher_path"
+    # Get absolute path for display
+    local abs_launcher_path="$(cd "$(dirname "$launcher_path")" && pwd)/$(basename "$launcher_path")"
+
+    print_color "$GREEN" "✓ Created launcher script: $abs_launcher_path"
     print_color "$YELLOW" "  You can add it to your PATH or create an alias:"
-    print_color "$YELLOW" "  alias mdwb='$launcher_path'"
+    print_color "$YELLOW" "  alias mdwb='$abs_launcher_path'"
 }
 
 # Main installation flow
@@ -563,8 +567,12 @@ main() {
     print_color "$GREEN" "   Installation Complete!                       "
     print_color "$GREEN" "════════════════════════════════════════════════"
     echo
+
+    # Get absolute install path for display
+    local abs_install_path="$(pwd)"
+
     print_color "$BLUE" "Quick Start:"
-    print_color "$BLUE" "  cd $INSTALL_DIR"
+    print_color "$BLUE" "  cd $abs_install_path"
 
     if [ -z "$OCR_API_KEY" ]; then
         print_color "$YELLOW" "  # FIRST: Add your OCR API key to .env"
@@ -576,7 +584,7 @@ main() {
     print_color "$BLUE" "  uv run python -m scripts.mdwb_cli fetch https://example.com"
     echo
     print_color "$BLUE" "Or use the launcher:"
-    print_color "$BLUE" "  $INSTALL_DIR/mdwb fetch https://example.com"
+    print_color "$BLUE" "  $abs_install_path/mdwb fetch https://example.com"
     echo
 
     if [ "$INSTALL_BROWSERS" = true ]; then
@@ -591,7 +599,7 @@ main() {
         print_color "$RED" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         print_color "$RED" "  ACTION REQUIRED: Set your OCR API key in .env"
         print_color "$RED" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        print_color "$YELLOW" "  Edit: $INSTALL_DIR/.env"
+        print_color "$YELLOW" "  Edit: $abs_install_path/.env"
         print_color "$YELLOW" "  Set: OLMOCR_API_KEY=sk-your-actual-api-key"
         print_color "$RED" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo
