@@ -1109,13 +1109,10 @@ class ComprehensiveTestRunner:
         # Start metrics
         test_case.metrics = TestMetrics()
 
-        # Create a status display
-        status = Status(f"Running: {test_case.name}", console=self.console)
-        status.start()
-
         try:
             # Step 1: Submit job
-            status.update(f"[cyan]Submitting job for {test_case.name}...[/cyan]")
+            if self.verbose:
+                self.console.print(f"[cyan]Submitting job for {test_case.name}...[/cyan]")
 
             if test_case.url == "health_check":
                 # Special case for health check
