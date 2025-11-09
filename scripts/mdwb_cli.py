@@ -722,6 +722,11 @@ def _stream_job(
                     state_value = payload.strip().upper()
                     if state_value in {"DONE", "FAILED"}:
                         on_terminal(state_value, None)
+                        return
+                if on_terminal and event == "state":
+                    state_value = payload.strip().upper()
+                    if state_value in {"DONE", "FAILED"}:
+                        on_terminal(state_value, None)
 
 
 def _iter_event_lines(

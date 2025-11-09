@@ -480,6 +480,36 @@ async def test_delete_webhook_requires_both_identifiers(tmp_path: Path):
     assert manager._webhooks[job_id], "cached webhook list should remain intact"
 
 
+def test_cache_key_changes_when_cft_version_differs():
+    """Changing the CfT build should invalidate the cache key."""
+
+    capture_config = CaptureConfig(url="https://example.com/cache-cft")
+    default_key = _build_cache_key(config=capture_config, settings=job_global_settings)
+    mutated_settings = replace(
+        job_global_settings,
+        browser=replace(job_global_settings.browser, cft_version="chrome-999.0.0"),
+    )
+
+    mutated_key = _build_cache_key(config=capture_config, settings=mutated_settings)
+
+    assert mutated_key != default_key
+
+
+def test_cache_key_changes_when_ocr_model_differs():
+    """Switching OCR models must produce a distinct cache key."""
+
+    capture_config = CaptureConfig(url="https://example.com/cache-ocr")
+    default_key = _build_cache_key(config=capture_config, settings=job_global_settings)
+    mutated_settings = replace(
+        job_global_settings,
+        ocr=replace(job_global_settings.ocr, model="olmOCR-2-7B-NEW"),
+    )
+
+    mutated_key = _build_cache_key(config=capture_config, settings=mutated_settings)
+
+    assert mutated_key != default_key
+
+
 class _DeleteStubStore:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int | None, str | None]] = []
