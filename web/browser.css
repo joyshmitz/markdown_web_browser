@@ -179,11 +179,9 @@ body {
     position: absolute;
     inset: -1px;
     border-radius: var(--radius-full);
-    padding: 1px;
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
     opacity: 0;
     transition: opacity var(--transition-base);
-    /* Fallback for Firefox: simple border */
+    /* Fallback for Firefox: simple solid border */
     border: 2px solid var(--color-primary);
     box-sizing: border-box;
 }
@@ -192,6 +190,8 @@ body {
 @supports ((-webkit-mask-composite: xor) or (mask-composite: exclude)) {
     .address-bar::before {
         border: none;
+        padding: 1px;
+        background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
         -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
         -webkit-mask-composite: xor;
         mask-composite: exclude;
@@ -279,7 +279,7 @@ body {
     font-size: 13px;
     font-weight: 500;
     color: var(--color-text-secondary);
-    transition: color var(--transition-base);
+    transition: color var(--transition-base), background-color var(--transition-base), box-shadow var(--transition-base);
     position: relative;
     z-index: 1;
 }

@@ -9,6 +9,7 @@ import io
 import json
 import math
 import os
+import shlex
 import subprocess
 import time
 from collections import Counter, deque
@@ -689,15 +690,17 @@ def _trigger_event_hooks(entry: Mapping[str, Any], hooks: Optional[dict[str, lis
 
 def _run_hook(command: str, event_name: str, payload: Mapping[str, Any]) -> None:
     env = os.environ.copy()
-    env["MDWB_EVENT_NAME"] = event_name
+    env["MDWB_EVENT_NAME"] = shlex.quote(event_name)
     try:
-        env["MDWB_EVENT_PAYLOAD"] = json.dumps(payload)
+        payload_str = json.dumps(payload)
     except Exception:  # pragma: no cover - defensive
-        env["MDWB_EVENT_PAYLOAD"] = str(payload)
+        payload_str = str(payload)
+    env["MDWB_EVENT_PAYLOAD"] = shlex.quote(payload_str)
+
     try:
         subprocess.run(command, shell=True, check=False, env=env)
     except Exception as exc:  # pragma: no cover - defensive
-        console.print(f"[yellow]Hook command '{command}' failed: {exc}[/]")
+        console.print(f"[yellow]Hook command '{shlex.quote(command)}' failed: {exc}[/]")
 
 
 def _iter_sse(response: httpx.Response) -> Iterable[Tuple[str, str]]:
