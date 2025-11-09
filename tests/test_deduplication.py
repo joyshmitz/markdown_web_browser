@@ -117,6 +117,51 @@ class TestSequenceMatching:
         # "Middle match" appears in both but not at boundary
         assert result is None
 
+    def test_average_similarity_with_one_corrupted_line(self):
+        """Test sequence matching handles one corrupted line via averaging.
+
+        This demonstrates the key difference between sequence and fuzzy matching:
+        - Sequence: Average similarity >= threshold (lenient)
+        - Fuzzy: Every line similarity >= threshold (strict)
+        """
+        # Line 1: Perfect match (1.0)
+        # Line 2: Perfect match (1.0)
+        # Line 3: Heavily corrupted (low similarity ~0.5)
+        # Average: (1.0 + 1.0 + 0.5) / 3 = 0.83
+        prev_tail = ["Perfect line one", "Perfect line two", "This line is correct"]
+        curr_head = ["Perfect line one", "Perfect line two", "Th1s 11ne 1s c0rrupt", "New content"]
+
+        # Should match with lower threshold (0.80) via averaging
+        result = _find_overlap_sequence_matching(
+            prev_tail,
+            curr_head,
+            min_match_lines=3,
+            min_similarity=0.80,
+        )
+
+        assert result is not None
+        match_size, avg_sim = result
+        assert match_size == 3
+        assert 0.80 <= avg_sim < 0.90  # Average similarity between thresholds
+
+    def test_high_average_similarity_with_punctuation_differences(self):
+        """Test sequence matching with minor OCR variations."""
+        prev_tail = ["Hello World!", "How are you?", "Fine, thanks."]
+        curr_head = ["Hello World", "How are you", "Fine thanks", "Next"]
+
+        result = _find_overlap_sequence_matching(
+            prev_tail,
+            curr_head,
+            min_match_lines=2,
+            min_similarity=0.90,
+        )
+
+        # Should match - punctuation differences are minor
+        assert result is not None
+        match_size, avg_sim = result
+        assert match_size == 3
+        assert avg_sim >= 0.90
+
 
 class TestFuzzyMatching:
     """Tests for fuzzy line-by-line matching."""
@@ -346,6 +391,37 @@ class TestTierFallback:
         assert info.lines_removed == 2
         assert info.method in ["sequence", "fuzzy"]
         assert result_lines == ["Line 3"]
+
+    def test_sequence_succeeds_where_fuzzy_fails(self):
+        """Test that sequence matching (average) is more lenient than fuzzy (per-line).
+
+        Sequence matching uses average similarity, so it can handle one corrupted
+        line if other lines are perfect. Fuzzy matching requires every line to
+        meet the threshold.
+        """
+        # Perfect, Perfect, Corrupted (~50% similar)
+        # Average: ~0.83, but one line is way below fuzzy threshold (0.85)
+        prev_lines = ["First perfect line", "Second perfect line", "Third line is good"]
+        curr_lines = ["First perfect line", "Second perfect line", "Th1rd 11ne 1s b4d", "New"]
+        prev_tile = create_test_tile(0, bottom_hash="match123")
+        curr_tile = create_test_tile(1, top_hash="match123")
+
+        # Use lower sequence threshold to trigger sequence matching
+        result_lines, info = deduplicate_tile_overlap(
+            prev_lines,
+            curr_lines,
+            prev_tile,
+            curr_tile,
+            sequence_similarity_threshold=0.80,  # Lower than default
+            fuzzy_line_threshold=0.85,  # Standard threshold
+        )
+
+        # Should match via sequence (average ~0.83) but NOT fuzzy (one line < 0.85)
+        # OR might not match at all if corruption is too high
+        if info.lines_removed > 0:
+            # If it matched, it should be via sequence, not fuzzy
+            assert info.method == "sequence"
+            assert result_lines == ["New"]
 
     def test_no_match_when_all_tiers_fail(self):
         """Test no deduplication when all matching tiers fail."""

@@ -631,3 +631,75 @@ def test_trigger_event_hooks_handles_state_events(monkeypatch):
     hooks = {"state:DONE": ["cmd1"], "*": ["cmd2"]}
     mdwb_cli._trigger_event_hooks({"event": "state", "payload": "DONE"}, hooks)
     assert recorded == [("cmd1", "state"), ("cmd2", "state")]
+
+
+def test_run_hook_properly_escapes_environment_variables(monkeypatch):
+    """Test that _run_hook properly escapes environment variables to prevent shell injection."""
+    import shlex
+    import subprocess
+
+    captured_env = {}
+    captured_command = None
+
+    def fake_subprocess_run(command, shell, check, env):  # noqa: ANN001
+        nonlocal captured_env, captured_command
+        captured_command = command
+        captured_env = env.copy()
+        # Don't actually execute anything
+        return None
+
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+
+    # Test with potentially malicious input
+    malicious_event = "snapshot'; rm -rf /; echo 'pwned"
+    malicious_payload = {"data": "'; cat /etc/passwd; echo '"}
+
+    mdwb_cli._run_hook("echo 'test'", malicious_event, malicious_payload)
+
+    # Verify that environment variables are properly escaped
+    assert "MDWB_EVENT_NAME" in captured_env
+    assert "MDWB_EVENT_PAYLOAD" in captured_env
+
+    # Check that the values are properly shell-escaped
+    event_name = captured_env["MDWB_EVENT_NAME"]
+    payload_str = captured_env["MDWB_EVENT_PAYLOAD"]
+
+    # Verify they are quoted (shlex.quote adds quotes)
+    assert event_name.startswith("'") or event_name.startswith('"')
+    assert payload_str.startswith("'") or payload_str.startswith('"')
+
+    # Verify the original dangerous characters are escaped
+    assert "'; rm -rf" not in event_name or "\\'" in event_name
+    assert "'; cat /etc" not in payload_str or "\\'" in payload_str
+
+    # The command itself should still be the original (we only escape env vars)
+    assert captured_command == "echo 'test'"
+
+
+def test_run_hook_handles_json_serialization_errors(monkeypatch):
+    """Test that _run_hook gracefully handles JSON serialization failures."""
+    import subprocess
+    import shlex
+
+    captured_env = {}
+
+    def fake_subprocess_run(command, shell, check, env):  # noqa: ANN001
+        nonlocal captured_env
+        captured_env = env.copy()
+        return None
+
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+
+    # Create an object that can't be JSON serialized
+    class UnserializableObj:
+        def __str__(self):
+            return "fallback_str"
+
+    unserializable_payload = {"obj": UnserializableObj()}
+
+    mdwb_cli._run_hook("echo test", "event", unserializable_payload)
+
+    # Should fall back to str() and still be properly escaped
+    payload_env = captured_env["MDWB_EVENT_PAYLOAD"]
+    assert "fallback_str" in payload_env
+    assert payload_env.startswith("'") or payload_env.startswith('"')

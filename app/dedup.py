@@ -277,53 +277,65 @@ def _find_overlap_sequence_matching(
     min_similarity: float,
 ) -> tuple[int, float] | None:
     """
-    Find overlap using difflib.SequenceMatcher for fuzzy matching.
+    Find overlap using average similarity across the boundary region.
 
-    This handles OCR variations where text is similar but not exactly identical.
-    Uses line-based comparison for performance.
+    This tier is more lenient than fuzzy matching - it accepts blocks where
+    the AVERAGE similarity is high, even if individual lines have OCR errors.
+    This handles cases like:
+      - Most lines match perfectly
+      - One line has significant OCR corruption
+      - Average similarity is still high
+
+    Difference from fuzzy matching:
+      - Fuzzy: Requires EVERY line to meet threshold (strict)
+      - Sequence: Requires AVERAGE to meet threshold (lenient)
 
     Args:
         prev_tail: Last N lines of previous tile
         curr_head: First N lines of current tile
         min_match_lines: Minimum lines required for a valid match
-        min_similarity: Minimum similarity ratio (0.0-1.0) for each line
+        min_similarity: Minimum average similarity ratio (0.0-1.0)
 
     Returns:
         (match_size, avg_similarity) if found, None otherwise
     """
-    matcher = SequenceMatcher(None, prev_tail, curr_head)
-    matches = matcher.get_matching_blocks()
-
-    # Find best match at boundary
+    max_compare = min(len(prev_tail), len(curr_head))
     best_match: tuple[int, float] | None = None
 
-    for i, j, size in matches:
-        # Must be at end of prev_tail (i + size == len(prev_tail))
-        if i + size != len(prev_tail):
-            continue
+    # Try different overlap sizes, from largest to smallest
+    for overlap_size in range(max_compare, 0, -1):
+        if overlap_size < min_match_lines:
+            break  # No point trying smaller sizes
 
-        # Must be at start of curr_head (j == 0)
-        if j != 0:
-            continue
+        # Extract boundary segments
+        prev_segment = prev_tail[-overlap_size:]
+        curr_segment = curr_head[:overlap_size]
 
-        # Must be long enough
-        if size < min_match_lines:
-            continue
-
-        # Calculate line-by-line similarity for this block
-        block_prev = prev_tail[i : i + size]
-        block_curr = curr_head[j : j + size]
-
+        # Calculate average line-by-line similarity
         total_similarity = 0.0
-        for p, c in zip(block_prev, block_curr):
-            line_sim = SequenceMatcher(None, p.strip(), c.strip()).ratio()
-            total_similarity += line_sim
+        for prev_line, curr_line in zip(prev_segment, curr_segment):
+            # Strip whitespace for comparison
+            p_stripped = prev_line.strip()
+            c_stripped = curr_line.strip()
 
-        avg_similarity = total_similarity / size
+            # Handle empty lines
+            if not p_stripped and not c_stripped:
+                # Both empty - perfect match
+                total_similarity += 1.0
+            elif not p_stripped or not c_stripped:
+                # One empty, one not - no similarity
+                total_similarity += 0.0
+            else:
+                # Both have content - fuzzy compare
+                line_sim = SequenceMatcher(None, p_stripped, c_stripped).ratio()
+                total_similarity += line_sim
 
+        avg_similarity = total_similarity / overlap_size
+
+        # Check if average similarity meets threshold
         if avg_similarity >= min_similarity:
-            if best_match is None or size > best_match[0]:
-                best_match = (size, avg_similarity)
+            best_match = (overlap_size, avg_similarity)
+            break  # Found longest match with sufficient average similarity
 
     return best_match
 
