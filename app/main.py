@@ -248,6 +248,13 @@ async def index() -> str:
     return (WEB_ROOT / "index.html").read_text(encoding="utf-8")
 
 
+@app.get("/browser", response_class=HTMLResponse)
+async def browser() -> str:
+    """Serve the browser-like UI for navigating captured pages."""
+
+    return (WEB_ROOT / "browser.html").read_text(encoding="utf-8")
+
+
 @app.get("/health", tags=["health"])
 async def healthcheck() -> dict[str, str]:
     """Return a simple status useful for smoke tests."""

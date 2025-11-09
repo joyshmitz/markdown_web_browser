@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from importlib import metadata
 import time
@@ -205,13 +205,38 @@ class JobManager:
         if not isinstance(manifest, Mapping):
             msg = "Manifest payload must be an object"
             raise ValueError(msg)
+
+        # Validate required URL field
         url = manifest.get("url")
         if not isinstance(url, str) or not url.strip():
             msg = "Manifest is missing a valid 'url'"
             raise ValueError(msg)
+
+        # Validate URL format
+        try:
+            parsed = urlparse(url)
+            if not parsed.scheme or not parsed.netloc:
+                msg = f"Manifest URL '{url}' is not a valid URL"
+                raise ValueError(msg)
+        except Exception as exc:
+            msg = f"Manifest URL '{url}' is malformed: {exc}"
+            raise ValueError(msg) from exc
+
+        # Validate optional profile_id
         profile_id = manifest.get("profile_id")
-        if not isinstance(profile_id, str) or not profile_id.strip():
-            profile_id = None
+        if profile_id is not None:
+            if not isinstance(profile_id, str) or not profile_id.strip():
+                profile_id = None
+            elif len(profile_id) > 255:  # Reasonable length limit
+                msg = f"Manifest profile_id '{profile_id}' is too long (max 255 chars)"
+                raise ValueError(msg)
+
+        # Validate environment metadata if present
+        environment = manifest.get("environment")
+        if environment is not None and not isinstance(environment, Mapping):
+            msg = "Manifest environment field must be an object"
+            raise ValueError(msg)
+
         snapshot = await self.create_job(JobCreateRequest(url=url, profile_id=profile_id))
         metadata = _build_replay_metadata(manifest)
         if metadata:
@@ -275,16 +300,67 @@ class JobManager:
                 pass
             LOGGER.info("Job watchdog stopped")
 
+    async def _cleanup_completed_jobs(self, now: datetime, retention_hours: int = 2) -> None:
+        """Clean up in-memory data for completed jobs older than retention_hours.
+
+        This prevents memory leaks by removing old snapshots, event logs,
+        subscribers, and other data structures for jobs that completed
+        more than retention_hours ago.
+        """
+        cutoff_time = now - timedelta(hours=retention_hours)
+        jobs_to_clean = []
+
+        for job_id, snapshot in self._snapshots.items():
+            # Only clean up completed jobs
+            if snapshot["state"] not in (JobState.DONE, JobState.FAILED):
+                continue
+
+            # Check completion time from database
+            try:
+                record = await asyncio.to_thread(self.store.fetch_run, job_id)
+                if not record or not record.finished_at:
+                    continue
+
+                # Normalize finished_at to UTC-naive for comparison
+                finished_at = record.finished_at
+                finished_at_naive = finished_at.replace(tzinfo=None) if finished_at.tzinfo else finished_at
+                cutoff_naive = cutoff_time.replace(tzinfo=None)
+
+                if finished_at_naive < cutoff_naive:
+                    jobs_to_clean.append(job_id)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                LOGGER.warning("Error checking completion time for job %s: %s", job_id, exc)
+
+        # Clean up memory for old jobs
+        for job_id in jobs_to_clean:
+            self._snapshots.pop(job_id, None)
+            self._event_logs.pop(job_id, None)
+            self._event_sequences.pop(job_id, None)
+            self._subscribers.pop(job_id, None)
+            self._event_subscribers.pop(job_id, None)
+            self._webhooks.pop(job_id, None)
+            self._pending_webhooks.pop(job_id, None)
+            self._cache_keys.pop(job_id, None)
+
+        if jobs_to_clean:
+            LOGGER.info("Cleaned up memory for %d completed jobs", len(jobs_to_clean))
+
     async def _watchdog_loop(self) -> None:
         """Background task that monitors jobs and times out stuck ones.
 
         Note: Uses asyncio.to_thread() for database operations to avoid blocking
         the event loop during SQLite I/O.
         """
+        last_cleanup = datetime.now(timezone.utc)
         while not self._shutdown:
             try:
                 await asyncio.sleep(60)  # Check every minute
                 now = datetime.now(timezone.utc)
+
+                # Clean up completed jobs every 30 minutes
+                if (now - last_cleanup).total_seconds() > 1800:  # 30 minutes
+                    await self._cleanup_completed_jobs(now)
+                    last_cleanup = now
 
                 for job_id, snapshot in list(self._snapshots.items()):
                     # Skip already-completed jobs
@@ -296,11 +372,12 @@ class JobManager:
                     if not record:
                         continue
 
-                    # Calculate elapsed time (SQLite strips timezone, so make it UTC-aware if needed)
+                    # Calculate elapsed time (SQLite strips timezone, so normalize both to UTC-naive)
                     started_at = record.started_at
-                    if started_at.tzinfo is None:
-                        started_at = started_at.replace(tzinfo=timezone.utc)
-                    elapsed_seconds = (now - started_at).total_seconds()
+                    # Normalize both timestamps to naive UTC for consistent comparison
+                    started_at_naive = started_at.replace(tzinfo=None) if started_at.tzinfo else started_at
+                    now_naive = now.replace(tzinfo=None)
+                    elapsed_seconds = (now_naive - started_at_naive).total_seconds()
 
                     if elapsed_seconds > self._job_timeout_seconds:
                         LOGGER.error(
@@ -316,11 +393,12 @@ class JobManager:
                         self._set_error(job_id, error_msg)
 
                         # Update database status (run in thread to avoid blocking)
+                        # Make naive for SQLite (which strips timezone anyway)
                         await asyncio.to_thread(
                             self.store.update_status,
                             job_id=job_id,
                             status=JobState.FAILED,
-                            finished_at=now,
+                            finished_at=now.replace(tzinfo=None),
                         )
 
                         # Cancel the task if it's still running
@@ -338,14 +416,16 @@ class JobManager:
         started_at = datetime.now(timezone.utc)
         profile_id = getattr(config, "profile_id", None)
         cache_key = self._cache_keys.get(job_id)
-        storage.allocate_run(
+        # Use asyncio.to_thread for potentially blocking database operations
+        await asyncio.to_thread(
+            storage.allocate_run,
             job_id=job_id,
             url=url,
             started_at=started_at,
             profile_id=profile_id,
             cache_key=cache_key,
         )
-        storage.update_status(job_id=job_id, status=JobState.CAPTURING)
+        await asyncio.to_thread(storage.update_status, job_id=job_id, status=JobState.CAPTURING)
         pending = self._pending_webhooks.pop(job_id, [])
         if pending:
             _persist_pending_webhooks(storage, pending, job_id)
@@ -374,11 +454,15 @@ class JobManager:
             self._emit_ocr_event(job_id, capture_result.manifest)
             self._emit_dom_assist_event(job_id, capture_result.manifest)
             self._set_state(job_id, JobState.DONE)
-            storage.update_status(job_id=job_id, status=JobState.DONE, finished_at=datetime.now(timezone.utc))
+            await asyncio.to_thread(
+                storage.update_status, job_id=job_id, status=JobState.DONE, finished_at=datetime.now(timezone.utc)
+            )
         except Exception as exc:  # pragma: no cover - surfaced to API callers
             self._set_state(job_id, JobState.FAILED)
             self._set_error(job_id, str(exc))
-            storage.update_status(job_id=job_id, status=JobState.FAILED, finished_at=datetime.now(timezone.utc))
+            await asyncio.to_thread(
+                storage.update_status, job_id=job_id, status=JobState.FAILED, finished_at=datetime.now(timezone.utc)
+            )
             raise
         finally:
             self._tasks.pop(job_id, None)

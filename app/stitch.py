@@ -9,7 +9,9 @@ import re
 from typing import Sequence
 from urllib.parse import quote_plus
 
+from app.dedup import deduplicate_tile_overlap, DeduplicationResult
 from app.dom_links import DomHeading, DomTextOverlay, normalize_heading_text
+from app.settings import get_settings
 from app.tiler import TileSlice
 
 _HEADING_RE = re.compile(r"^(#{1,6})(\s+.+)")
@@ -45,6 +47,11 @@ class StitchResult:
     markdown: str
     dom_assists: list[DomAssistEntry]
     seam_marker_events: list[SeamMarkerEvent]
+    dedup_events: list[DeduplicationResult] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.dedup_events is None:
+            object.__setattr__(self, "dedup_events", [])
 
 
 @dataclass(slots=True)
@@ -101,24 +108,65 @@ def stitch_markdown(
     dom_headings: Sequence[DomHeading] | None = None,
     dom_overlays: Sequence[DomTextOverlay] | None = None,
     job_id: str | None = None,
+    deduplicate_overlaps: bool | None = None,
 ) -> StitchResult:
-    """Join OCR-derived Markdown segments with provenance + DOM assists."""
+    """Join OCR-derived Markdown segments with provenance + DOM assists.
+
+    Args:
+        chunks: OCR-derived markdown chunks (one per tile)
+        tiles: Tile metadata for provenance tracking
+        dom_headings: DOM-extracted heading outline for normalization
+        dom_overlays: DOM text overlays for error correction
+        job_id: Job ID for highlight URL generation
+        deduplicate_overlaps: Enable overlap deduplication (defaults to settings value)
+
+    Returns:
+        StitchResult with markdown, dom_assists, seam_marker_events, and dedup_events
+    """
 
     if not chunks:
         return StitchResult(markdown="", dom_assists=[], seam_marker_events=[])
+
+    # Get deduplication settings
+    settings = get_settings()
+    dedup_enabled = deduplicate_overlaps if deduplicate_overlaps is not None else settings.deduplication.enabled
 
     processed: list[str] = []
     last_heading_level = 0
     last_table_signature: str | None = None
     previous_tile: TileSlice | None = None
+    previous_chunk: str = ""
     heading_guide = HeadingGuide(dom_headings) if dom_headings else None
     overlay_index = DomOverlayIndex(dom_overlays)
     dom_assists: list[DomAssistEntry] = []
     seam_events: list[SeamMarkerEvent] = []
+    dedup_events: list[DeduplicationResult] = []
 
     for idx, chunk in enumerate(chunks):
         lines = _split_lines(chunk)
         tile = tiles[idx] if tiles and idx < len(tiles) else None
+
+        # NEW: Deduplicate overlaps before other processing
+        if dedup_enabled and tile and previous_tile and previous_chunk:
+            prev_lines = _split_lines(previous_chunk)
+            lines, dedup_result = deduplicate_tile_overlap(
+                prev_lines=prev_lines,
+                curr_lines=lines,
+                prev_tile=previous_tile,
+                curr_tile=tile,
+                enabled=True,
+                min_overlap_lines=settings.deduplication.min_overlap_lines,
+                sequence_similarity_threshold=settings.deduplication.sequence_similarity_threshold,
+                fuzzy_line_threshold=settings.deduplication.fuzzy_line_threshold,
+                max_search_window=settings.deduplication.max_search_window,
+            )
+
+            # Track deduplication events
+            if dedup_result.lines_removed > 0:
+                dedup_events.append(dedup_result)
+                if settings.deduplication.log_events:
+                    processed.append(_format_dedup_comment(dedup_result))
+
         lines, last_heading_level, heading_changes = _normalize_headings(
             lines, last_heading_level, heading_guide
         )
@@ -161,11 +209,13 @@ def stitch_markdown(
         if body and body.strip():
             processed.append(body)
         previous_tile = tile if tile else previous_tile
+        previous_chunk = chunk  # Save for next iteration's deduplication
 
     return StitchResult(
         markdown="\n\n".join(processed),
         dom_assists=dom_assists,
         seam_marker_events=seam_events,
+        dedup_events=dedup_events,
     )
 
 
@@ -459,6 +509,22 @@ def _format_table_trim_comment(info: TrimmedHeaderInfo) -> str:
     parts = ["table-header-trimmed", f"reason={info.reason}"]
     if info.similarity is not None:
         parts.append(f"similarity={info.similarity:.2f}")
+    return f"<!-- {' '.join(parts)} -->"
+
+
+def _format_dedup_comment(result: DeduplicationResult) -> str:
+    """Format deduplication event as HTML comment."""
+    parts = [
+        "overlap-dedup:",
+        f"prev=tile_{result.prev_tile_index:04d}",
+        f"curr=tile_{result.curr_tile_index:04d}",
+        f"removed={result.lines_removed}",
+        f"method={result.method}",
+    ]
+    if result.similarity is not None:
+        parts.append(f"similarity={result.similarity:.3f}")
+    if result.overlap_hash:
+        parts.append(f"hash={result.overlap_hash[:8]}")
     return f"<!-- {' '.join(parts)} -->"
 
 

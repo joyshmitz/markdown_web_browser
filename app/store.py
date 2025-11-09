@@ -237,6 +237,9 @@ class Store:
             "seam_hash_count": "INTEGER",
             "seam_markers_summary": "JSON",
         }
+        # Valid SQLite column types for validation
+        valid_types = {"INTEGER", "TEXT", "REAL", "JSON", "BLOB", "NUMERIC"}
+
         with self.engine.begin() as conn:
             existing = {
                 row[1]  # column name
@@ -244,6 +247,13 @@ class Store:
             }
             for column, ddl in expected_types.items():
                 if column not in existing:
+                    # Validate column name and type to prevent SQL injection
+                    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", column):
+                        raise ValueError(f"Invalid column name: {column}")
+                    if ddl not in valid_types:
+                        raise ValueError(f"Invalid column type: {ddl}")
+
+                    # Safe to use f-string now that inputs are validated
                     conn.exec_driver_sql(f"ALTER TABLE runs ADD COLUMN {column} {ddl}")
 
     @contextmanager
@@ -280,8 +290,9 @@ class Store:
         if not cache_key:
             return None
 
-        # Calculate TTL cutoff time
+        # Calculate TTL cutoff time (make naive for SQLite comparison since SQLite strips timezone)
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.cache_ttl_hours)
+        cutoff_time = cutoff_time.replace(tzinfo=None)
 
         with self.session() as session:
             statement = (
@@ -689,7 +700,9 @@ def _create_engine(db_path: Path):
         dbapi_connection.enable_load_extension(True)
         sqlite_vec.load(dbapi_connection)
         # Enable WAL mode for concurrent read/write operations
-        dbapi_connection.execute("PRAGMA journal_mode=WAL").fetchone()
+        result = dbapi_connection.execute("PRAGMA journal_mode=WAL").fetchone()
+        if result and result[0].lower() != 'wal':
+            LOGGER.warning("Failed to enable WAL mode, got: %s", result[0])
         # Set busy timeout to 30 seconds
         dbapi_connection.execute("PRAGMA busy_timeout=30000").fetchone()
 

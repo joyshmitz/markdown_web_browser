@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Web Browser</title>
+    <link rel="stylesheet" href="/static/browser.css">
+    <!-- Prism.js for syntax highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <!-- GitHub markdown CSS for rendered view -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="browser-container">
+        <!-- Browser Chrome (toolbar) -->
+        <div class="browser-chrome">
+            <!-- Navigation buttons -->
+            <div class="nav-buttons">
+                <button id="back-btn" class="nav-btn" title="Back (Alt+Left)" disabled>
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M13 4L7 10L13 16" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                </button>
+                <button id="forward-btn" class="nav-btn" title="Forward (Alt+Right)" disabled>
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M7 4L13 10L7 16" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                </button>
+                <button id="refresh-btn" class="nav-btn" title="Refresh (Ctrl+R)">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M4 10C4 6.6863 6.6863 4 10 4C13.3137 4 16 6.6863 16 10C16 13.3137 13.3137 16 10 16C7.5 16 5.5 14.5 4.5 12.5" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <path d="M4.5 12.5L2 12.5L2 15" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Address bar -->
+            <div class="address-bar-container">
+                <div class="address-bar">
+                    <div class="secure-icon" title="Markdown rendering is secure">🔒</div>
+                    <input
+                        type="text"
+                        id="url-input"
+                        class="url-input"
+                        placeholder="Enter URL or search term"
+                        autocomplete="off"
+                    />
+                    <button id="go-btn" class="go-btn" title="Go">→</button>
+                </div>
+            </div>
+
+            <!-- View toggle -->
+            <div class="view-toggle">
+                <button id="rendered-btn" class="toggle-btn active" title="Rendered Markdown">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" fill="none" stroke-width="2"/>
+                        <line x1="6" y1="7" x2="14" y2="7" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="13" x2="11" y2="13" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    <span>Rendered</span>
+                </button>
+                <button id="raw-btn" class="toggle-btn" title="Raw Markdown (Ctrl+U)">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <text x="10" y="14" text-anchor="middle" font-family="monospace" font-size="12" fill="currentColor">{ }</text>
+                    </svg>
+                    <span>Raw</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Status bar (below chrome, above content) -->
+        <div class="status-bar" id="status-bar">
+            <div class="status-text" id="status-text">Ready</div>
+            <div class="loading-spinner" id="loading-spinner" style="display: none;">
+                <div class="spinner"></div>
+                <span id="loading-message">Loading...</span>
+            </div>
+            <div class="progress-container" id="progress-container" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <span class="progress-text" id="progress-text">0%</span>
+            </div>
+        </div>
+
+        <!-- Main content area -->
+        <div class="content-container">
+            <!-- Rendered markdown view -->
+            <div id="rendered-view" class="markdown-view active">
+                <div class="markdown-body" id="rendered-content">
+                    <div class="welcome-message">
+                        <h1>Welcome to Markdown Web Browser</h1>
+                        <p>Enter a URL in the address bar above to capture and view any webpage as markdown.</p>
+                        <h2>How it works:</h2>
+                        <ol>
+                            <li>Enter a URL and press Enter or click Go</li>
+                            <li>The page will be captured using headless Chrome</li>
+                            <li>Screenshots are sent to OLMoCR for text extraction</li>
+                            <li>You get clean, readable markdown!</li>
+                        </ol>
+                        <h2>Features:</h2>
+                        <ul>
+                            <li><strong>Toggle views:</strong> Switch between rendered markdown and raw text with syntax highlighting</li>
+                            <li><strong>Browser navigation:</strong> Use back/forward buttons or keyboard shortcuts (Alt+Left/Right)</li>
+                            <li><strong>Search:</strong> Enter search terms to search Google</li>
+                        </ul>
+                        <p><em>Try it now with a URL like https://example.com or https://news.ycombinator.com</em></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Raw markdown view -->
+            <div id="raw-view" class="markdown-view">
+                <pre><code id="raw-content" class="language-markdown"><!-- Welcome message will be replaced with actual markdown --></code></pre>
+            </div>
+
+            <!-- Error view -->
+            <div id="error-view" class="error-view" style="display: none;">
+                <div class="error-container">
+                    <div class="error-icon">⚠️</div>
+                    <h2 class="error-title" id="error-title">Error</h2>
+                    <p class="error-message" id="error-message"></p>
+                    <button id="retry-btn" class="retry-btn">Try Again</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+
+    <!-- Browser logic -->
+    <script src="/static/browser.js" type="module"></script>
+</body>
+</html>

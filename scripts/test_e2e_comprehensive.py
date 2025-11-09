@@ -1662,7 +1662,7 @@ Examples:
     )
     parser.add_argument(
         "--url",
-        help="Test a specific URL (creates custom test case, runs only this URL unless --category/--priority specified)"
+        help="Test a specific URL (always runs; if --category/--priority specified, also runs matching tests from suite)"
     )
     parser.add_argument(
         "--interactive",
@@ -1725,10 +1725,10 @@ Examples:
         if not args.category and not args.priority:
             runner.test_cases = [custom_test]
         else:
-            # If filters specified, add custom test to full suite and apply filters
+            # If filters specified, run custom test PLUS filtered suite
             runner.setup_test_suite()
-            runner.test_cases.append(custom_test)
 
+            # Apply filters to the full suite (not including custom test yet)
             if args.category:
                 runner.test_cases = [
                     tc for tc in runner.test_cases
@@ -1740,6 +1740,9 @@ Examples:
                     tc for tc in runner.test_cases
                     if tc.priority.value <= args.priority
                 ]
+
+            # Always add custom test at the beginning (never filter it out)
+            runner.test_cases.insert(0, custom_test)
     else:
         # Normal flow: setup full test suite
         runner.setup_test_suite()

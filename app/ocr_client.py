@@ -95,7 +95,17 @@ class OcrAutotuneSnapshot:
             "initial_limit": self.initial_limit,
             "final_limit": self.final_limit,
             "peak_limit": self.peak_limit,
-            "events": [event.__dict__ for event in self.events],
+            "events": [
+                {
+                    "previous_limit": e.previous_limit,
+                    "new_limit": e.new_limit,
+                    "reason": e.reason,
+                    "status_code": e.status_code,
+                    "latency_ms": e.latency_ms,
+                    "attempts": e.attempts,
+                }
+                for e in self.events
+            ],
         }
 
 
@@ -268,9 +278,14 @@ async def submit_tiles(
     max_limit = max(min_limit, cfg.ocr.max_concurrency)
     limiter = _AdaptiveLimiter(_AutotuneController(min_limit=min_limit, max_limit=max_limit))
     encoded_tiles = [_encode_request(req, cfg) for req in requests]
+
+    # For OpenAI-compatible endpoints, force 1 tile per batch since the API
+    # returns a single combined response for multiple images
+    max_batch_tiles = 1 if endpoint.endswith("/chat/completions") else max(1, cfg.ocr.max_batch_tiles)
+
     batches = _group_tiles(
         encoded_tiles,
-        max_tiles=max(1, cfg.ocr.max_batch_tiles),
+        max_tiles=max_batch_tiles,
         max_bytes=max(1, cfg.ocr.max_batch_bytes),
     )
 
@@ -374,24 +389,30 @@ async def _submit_batch(
 
 
 def _build_payload(tiles: Sequence[_EncodedTile], *, use_fp8: bool) -> dict:
-    # OpenAI-compatible vision format (send first tile, batching handled at higher level)
-    tile = tiles[0]
+    # OpenAI-compatible vision format with multiple images in content array
+    if not tiles:
+        raise ValueError("Must provide at least one tile")
 
     # Add allenai/ prefix if not present (for DeepInfra)
-    model = tile.model
+    model = tiles[0].model
     if not model.startswith("allenai/") and "olmOCR" in model:
         model = f"allenai/{model.split('-FP8')[0]}"  # Remove -FP8 suffix and add prefix
+
+    # Build content array with all tile images
+    content = []
+    for tile in tiles:
+        content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{tile.image_b64}"
+            }
+        })
 
     return {
         "model": model,
         "messages": [{
             "role": "user",
-            "content": [{
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{tile.image_b64}"
-                }
-            }]
+            "content": content
         }],
         "max_tokens": 4096
     }
@@ -461,6 +482,7 @@ def _extract_markdown_batch(response_json: dict, tile_ids: Sequence[str]) -> lis
             if isinstance(message, dict):
                 content = message.get("content")
                 if content is not None:
+                    # OpenAI returns one response; with our batching logic this should be for exactly 1 tile
                     return [str(content)]
 
     def _extract_from_entry(entry: dict) -> str | None:

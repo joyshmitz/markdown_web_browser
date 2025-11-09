@@ -152,6 +152,23 @@ class ManifestOCRQuota(BaseModel):
     warning_triggered: bool = Field(default=False)
 
 
+class ManifestDeduplicationStats(BaseModel):
+    """Deduplication statistics for tile overlap removal."""
+
+    total_events: int = Field(ge=0, description="Total deduplication attempts")
+    lines_removed: int = Field(ge=0, description="Total lines removed across all tiles")
+    exact_matches: int = Field(ge=0, description="Deduplication via exact matching")
+    sequence_matches: int = Field(ge=0, description="Deduplication via sequence matching")
+    fuzzy_matches: int = Field(ge=0, description="Deduplication via fuzzy matching")
+    no_matches: int = Field(ge=0, description="Tiles with overlap but no confident match")
+    avg_similarity: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Average similarity score for successful matches",
+    )
+
+
 class ManifestMetadata(BaseModel):
     """Top-level manifest payload stub until capture pipeline is wired."""
 
@@ -228,6 +245,14 @@ class ManifestMetadata(BaseModel):
     seam_marker_events: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Logged seam-fallback decisions with tile pair metadata",
+    )
+    dedup_events: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tile overlap deduplication events with removal counts and methods",
+    )
+    dedup_summary: ManifestDeduplicationStats | None = Field(
+        default=None,
+        description="Aggregated deduplication statistics for quick diagnostics",
     )
 
 

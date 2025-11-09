@@ -20,6 +20,7 @@ __all__ = [
     "TelemetrySettings",
     "StorageSettings",
     "WarningSettings",
+    "DeduplicationSettings",
     "Settings",
     "load_config",
     "get_settings",
@@ -95,6 +96,18 @@ class WarningSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DeduplicationSettings:
+    """Tile overlap deduplication configuration."""
+
+    enabled: bool
+    min_overlap_lines: int
+    sequence_similarity_threshold: float
+    fuzzy_line_threshold: float
+    max_search_window: int
+    log_events: bool
+
+
+@dataclass(frozen=True, slots=True)
 class LoggingSettings:
     """Filesystem paths for ops logging."""
 
@@ -111,6 +124,7 @@ class Settings:
     telemetry: TelemetrySettings
     storage: StorageSettings
     warnings: WarningSettings
+    deduplication: DeduplicationSettings
     logging: LoggingSettings
     webhook_secret: str
     server_runtime: str
@@ -312,6 +326,14 @@ def get_settings(env_path: str = ".env") -> Settings:
         seam_warning_ratio=_float(cfg, "SEAM_WARNING_RATIO", default=0.9),
         seam_warning_min_pairs=_int(cfg, "SEAM_WARNING_MIN_PAIRS", default=5),
     )
+    dedup_settings = DeduplicationSettings(
+        enabled=_bool(cfg, "DEDUP_ENABLED", default=True),
+        min_overlap_lines=_int(cfg, "DEDUP_MIN_OVERLAP_LINES", default=2),
+        sequence_similarity_threshold=_float(cfg, "DEDUP_SEQUENCE_THRESHOLD", default=0.90),
+        fuzzy_line_threshold=_float(cfg, "DEDUP_FUZZY_THRESHOLD", default=0.85),
+        max_search_window=_int(cfg, "DEDUP_MAX_SEARCH_WINDOW", default=40),
+        log_events=_bool(cfg, "DEDUP_LOG_EVENTS", default=True),
+    )
     logging_settings = LoggingSettings(
         warning_log_path=Path(cfg("WARNING_LOG_PATH", default="ops/warnings.jsonl")),
     )
@@ -329,6 +351,7 @@ def get_settings(env_path: str = ".env") -> Settings:
         telemetry=telemetry,
         storage=storage,
         warnings=warning_settings,
+        deduplication=dedup_settings,
         logging=logging_settings,
         webhook_secret=webhook_secret,
         server_runtime=server_runtime,
