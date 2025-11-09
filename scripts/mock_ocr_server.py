@@ -26,10 +26,6 @@ class OCRRequest(BaseModel):
     options: OCROptions = OCROptions()
 
 
-class OCRResponse(BaseModel):
-    choices: List[Dict[str, Any]]
-
-
 @app.post("/v1/completions")
 @app.post("/v1/completions/v1/ocr")
 async def process_ocr(request: OCRRequest):
@@ -52,16 +48,11 @@ This domain is for use in illustrative examples in documents. You may use this d
 *OCR processed tile {input_item.id} (hash: {image_hash})*"""
 
         responses.append({
-            "index": idx,
-            "message": {
-                "role": "assistant",
-                "content": mock_text
-            },
-            "finish_reason": "stop",
-            "logprobs": None,
+            "markdown": mock_text,
+            "content": mock_text
         })
 
-    return OCRResponse(choices=responses)
+    return {"results": responses}
 
 
 @app.get("/health")
