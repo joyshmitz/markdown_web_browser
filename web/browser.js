@@ -456,15 +456,26 @@ function switchView(viewName) {
         elements.renderedBtn.classList.remove('active');
         elements.rawView.classList.add('active');
         elements.renderedView.classList.remove('active');
+
+        // Re-apply syntax highlighting when switching to raw view
+        // This ensures Prism highlights the content after the element becomes visible
+        if (typeof Prism !== 'undefined' && elements.rawContent.textContent) {
+            // Use setTimeout to ensure the element is fully visible before highlighting
+            setTimeout(() => {
+                Prism.highlightElement(elements.rawContent);
+            }, 0);
+        }
     }
 }
 
 function showContentView() {
-    elements.renderedView.style.display = 'block';
-    elements.rawView.style.display = 'block';
+    // Don't use inline styles - let CSS classes control display
+    // Remove any inline display styles that might override CSS
+    elements.renderedView.style.display = '';
+    elements.rawView.style.display = '';
     elements.errorView.style.display = 'none';
 
-    // Apply current view
+    // Apply current view (this adds/removes .active class)
     switchView(state.currentView);
 }
 

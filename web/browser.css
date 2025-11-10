@@ -510,6 +510,103 @@ body {
 
 #raw-view code {
     font-family: var(--font-mono);
+    /* Base text color - Prism tokens will override this */
+    color: #ccc;
+}
+
+/* Ensure Prism token colors display properly by boosting specificity */
+#raw-view code[class*="language-"] .token {
+    /* Reset any inherited color so Prism's token-specific colors work */
+    color: inherit;
+}
+
+/* Prism token color overrides for Tomorrow theme - needed for specificity */
+#raw-view .token.comment,
+#raw-view .token.prolog,
+#raw-view .token.doctype,
+#raw-view .token.cdata {
+    color: #999999 !important;
+}
+
+#raw-view .token.punctuation {
+    color: #ccc !important;
+}
+
+#raw-view .token.namespace {
+    opacity: .7;
+}
+
+#raw-view .token.tag,
+#raw-view .token.operator,
+#raw-view .token.number {
+    color: #e2777a !important;
+}
+
+#raw-view .token.property,
+#raw-view .token.function {
+    color: #6196cc !important;
+}
+
+#raw-view .token.tag-id,
+#raw-view .token.selector,
+#raw-view .token.atrule-id {
+    color: #eeeeee !important;
+}
+
+#raw-view code.language-javascript,
+#raw-view .token.attr-name {
+    color: #7ec699 !important;
+}
+
+#raw-view code.language-css,
+#raw-view code.language-scss,
+#raw-view .token.boolean,
+#raw-view .token.string,
+#raw-view .token.entity,
+#raw-view .token.url,
+#raw-view .language-css .token.string,
+#raw-view .language-scss .token.string,
+#raw-view .style .token.string,
+#raw-view .token.attr-value,
+#raw-view .token.keyword,
+#raw-view .token.control,
+#raw-view .token.directive,
+#raw-view .token.unit,
+#raw-view .token.statement,
+#raw-view .token.regex,
+#raw-view .token.atrule {
+    color: #f08d49 !important;
+}
+
+#raw-view .token.placeholder,
+#raw-view .token.variable {
+    color: #67cdcc !important;
+}
+
+#raw-view .token.deleted {
+    text-decoration: line-through;
+}
+
+#raw-view .token.inserted {
+    border-bottom: 1px dotted #eeeeee;
+    text-decoration: none;
+}
+
+#raw-view .token.italic {
+    font-style: italic;
+}
+
+#raw-view .token.important,
+#raw-view .token.bold {
+    font-weight: bold;
+}
+
+#raw-view .token.important {
+    color: #c94922 !important;
+}
+
+#raw-view .token.entity {
+    cursor: help;
 }
 
 /* ============================================================================
