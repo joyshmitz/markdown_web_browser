@@ -434,12 +434,13 @@ function renderMarkdown(markdown) {
 }
 
 function renderRawMarkdown(markdown) {
-    // Set the markdown text
-    elements.rawContent.textContent = markdown;
-
-    // Apply syntax highlighting
-    if (typeof Prism !== 'undefined') {
-        Prism.highlightElement(elements.rawContent);
+    // Apply syntax highlighting using Prism.highlight()
+    if (typeof Prism !== 'undefined' && Prism.languages.markdown) {
+        const highlighted = Prism.highlight(markdown, Prism.languages.markdown, 'markdown');
+        elements.rawContent.innerHTML = highlighted;
+    } else {
+        // Fallback if Prism isn't loaded
+        elements.rawContent.textContent = markdown;
     }
 }
 
@@ -456,15 +457,7 @@ function switchView(viewName) {
         elements.renderedBtn.classList.remove('active');
         elements.rawView.classList.add('active');
         elements.renderedView.classList.remove('active');
-
-        // Re-apply syntax highlighting when switching to raw view
-        // This ensures Prism highlights the content after the element becomes visible
-        if (typeof Prism !== 'undefined' && elements.rawContent.textContent) {
-            // Use setTimeout to ensure the element is fully visible before highlighting
-            setTimeout(() => {
-                Prism.highlightElement(elements.rawContent);
-            }, 0);
-        }
+        // Syntax highlighting is already applied in renderRawMarkdown() using Prism.highlight()
     }
 }
 
