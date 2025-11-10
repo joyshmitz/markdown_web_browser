@@ -12,7 +12,21 @@ Render any URL with deterministic Chrome-for-Testing, tile screenshots into OCR-
 
 **The Challenge:** Finviz.com is protected by **Cloudflare bot detection** that blocks traditional web scrapers. Our system bypasses this with comprehensive stealth techniques.
 
-**Markdown Output with Full Provenance** (truncated for brevity - actual output is 223 lines):
+### BEFORE: Original Website
+
+<img src="docs/images/finviz_before.png" alt="finviz.com original website" width="800">
+
+### AFTER: Clean Markdown (Two Views)
+
+**Rendered Markdown** - Beautiful GitHub-styled formatting:
+
+<img src="docs/images/finviz_after_rendered.png" alt="Rendered markdown view in browser UI" width="800">
+
+**Raw Markdown** - Syntax-highlighted source with full provenance:
+
+<img src="docs/images/finviz_after_raw.png" alt="Raw markdown view with syntax highlighting" width="800">
+
+### Sample Output (truncated - actual output is 223 lines)
 
 ```markdown
 <!-- source: tile_0000, y=0, height=1288, sha256=557720698e6ee5e6474e69abc8305307d9e080198ab89cdccb0f7cfbe5e176dc, scale=0.50, viewport_y=0, overlap_px=120, path=artifact/tiles/tile_0000.png, highlight=/jobs/690fec5fca24499c901305d38bc85b6f/artifact/highlight?tile=artifact%2Ftiles%2Ftile_0000.png&y0=0&y1=1288 -->
@@ -68,7 +82,7 @@ This screenshot from Finviz shows a financial visualization dashboard with vario
 <!-- ... 2 more tiles with earnings releases, forex data, and full market overview ... -->
 ```
 
-**What makes this work:**
+### What makes this work:
 - ✅ **Bypasses Cloudflare bot detection** - Chrome's `--headless=new` mode (undetectable) + 60+ lines of stealth JavaScript
 - ✅ **Comprehensive fingerprint masking** - navigator.webdriver, plugins, permissions API, hardware specs
 - ✅ **Captures 4 tiles** with overlapping regions for seamless stitching
@@ -542,14 +556,3 @@ mdwb dom links --job-id job123
 | `TILE_PROCESSING_FAILED` | Image processing error | Check libvips installation |
 | `MANIFEST_VALIDATION_FAILED` | Corrupt job state | Restart job, check disk space |
 | `DOM_SNAPSHOT_FAILED` | Can't save DOM | Check write permissions |
-
-### Legacy Troubleshooting
-
-- **Playwright/CfT mismatch:** Run `playwright install chromium --with-deps --channel=cft` and confirm `CFT_VERSION`/`CFT_LABEL` match the installed build. If CfT labels shifted, update `.env` + manifests before rerunning.
-- **`.env` drift:** `uv run python scripts/check_env.py --json` pinpoints missing values. Required vars with `None` will fail CI.
-- **OCR throttling:** Lower `OCR_MAX_CONCURRENCY`, restart the job, and capture request IDs from manifests for the ops thread.
-- **Warning log explosions:** Tail `uv run python scripts/mdwb_cli.py warnings --count 100 --json` and look for repeated warning codes (canvas-heavy, scroll-shrink); the JSON output now includes `validation_failure_count`, `overlap_match_ratio`, and `sweep_summary` to speed up dashboard ingestion. Update `docs/blocklist.md` / selectors if overlays broke capture.
-- **SSE disconnects:** The UI should show an SSE health badge; check `/jobs/{id}/events` NDJSON output via `mdwb events --follow` to ensure the backend is still emitting. If not, inspect `app/jobs.py` logs for heartbeat gaps.
-- **Manifest missing links/DOM snapshots:** Ensure the capture job has write access to `CACHE_ROOT`; the Store will refuse to emit `/jobs/{id}/links.json` when the DOM snapshot can't be written.
-- **Seam alignment questions:** Each viewport sweep now draws a subtle watermark line at the top/bottom edge; the resulting seam hashes (`seam_hash=…` in Markdown provenance) plus `mdwb diag --ocr-metrics` output help confirm adjacent tiles align correctly. When overlap hashes disagree, the stitcher now logs `seam_marker_events` so manifests/CLI output show exactly which tile pairs relied on the fallback hints.
-

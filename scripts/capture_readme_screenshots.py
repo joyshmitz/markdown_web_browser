@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Script to capture before/after screenshots for README.md
+Capture screenshots for README.md demonstrating the finviz.com example.
 
-This script:
-1. Captures original web pages (before) using Playwright
-2. Captures our browser UI showing rendered markdown (after)
-3. Saves as PNG format (high quality, good for screenshots)
-4. Stores in docs/images/ directory
+This script captures:
+1. BEFORE: Original finviz.com website
+2. AFTER (Raw): Browser UI showing raw markdown with syntax highlighting
+3. AFTER (Rendered): Browser UI showing rendered markdown
 """
 
 import asyncio
@@ -14,106 +13,125 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 
-# Screenshot configuration
-SCREENSHOTS_DIR = Path(__file__).parent.parent / "docs" / "images"
-VIEWPORT_SIZE = {"width": 1280, "height": 900}
+async def capture_screenshots():
+    """Capture all required screenshots for README."""
 
-# URLs to capture
-URLS = {
-    "finviz": "https://finviz.com/screener.ashx?v=111",
-    "example": "https://example.com",
-    "hackernews": "https://news.ycombinator.com",
-}
-
-
-async def capture_original_page(page, url: str, output_path: Path):
-    """Capture a screenshot of the original web page."""
-    print(f"📸 Capturing original page: {url}")
-
-    await page.goto(url, wait_until="networkidle", timeout=30000)
-
-    # Wait a bit for any dynamic content to load
-    await page.wait_for_timeout(2000)
-
-    # Take screenshot (PNG format for quality)
-    await page.screenshot(path=str(output_path), type="png")
-    print(f"✅ Saved: {output_path}")
-
-
-async def capture_browser_ui(page, url: str, output_path: Path, server_url: str = "http://localhost:8000"):
-    """Capture a screenshot of our browser UI showing rendered markdown."""
-    print(f"📸 Capturing browser UI for: {url}")
-
-    # Navigate to our browser UI
-    browser_url = f"{server_url}/browser"
-    await page.goto(browser_url, wait_until="networkidle")
-
-    # Wait for page to load
-    await page.wait_for_timeout(1000)
-
-    # Enter the URL in the address bar
-    url_input = await page.query_selector("#url-input")
-    if url_input:
-        await url_input.fill(url)
-        await url_input.press("Enter")
-
-        # Wait for job to complete (simplified - in reality would need to poll)
-        # For now, just wait a reasonable amount of time
-        print("⏳ Waiting for markdown capture to complete...")
-        await page.wait_for_timeout(60000)  # Wait up to 60 seconds
-
-        # Take screenshot (PNG format for quality)
-        await page.screenshot(path=str(output_path), type="png")
-        print(f"✅ Saved: {output_path}")
-    else:
-        print("❌ Could not find URL input field")
-
-
-async def main():
-    """Main entry point."""
-    # Create screenshots directory
-    SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"📁 Screenshots will be saved to: {SCREENSHOTS_DIR}")
+    output_dir = Path("docs/images")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     async with async_playwright() as p:
-        # Launch browser
-        browser = await p.chromium.launch(channel="chrome")
-        context = await browser.new_context(viewport=VIEWPORT_SIZE)
+        # Launch browser with same stealth settings as our system
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--headless=new",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--window-size=1920,1080",
+            ]
+        )
+
+        context = await browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/130.0.0.0 Safari/537.36"
+            ),
+        )
+
         page = await context.new_page()
 
+        # Add stealth masking
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            delete navigator.__proto__.webdriver;
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: 'Portable Document Format' },
+                    { name: 'Native Client', filename: 'internal-nacl-plugin', description: 'Native Client Executable' }
+                ]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+            if (!window.chrome) {
+                window.chrome = {
+                    runtime: {},
+                    loadTimes: function() {},
+                    csi: function() {},
+                    app: {}
+                };
+            }
+        """)
+
+        print("📸 Capturing BEFORE screenshot: finviz.com original...")
+
+        # 1. Capture original finviz.com (BEFORE)
         try:
-            # Capture example.com (simple page)
-            await capture_original_page(
-                page,
-                URLS["example"],
-                SCREENSHOTS_DIR / "example_before.png"
+            await page.goto("https://finviz.com", wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)  # Wait for dynamic content
+            await page.screenshot(path=str(output_dir / "finviz_before.png"), full_page=False)
+            print("✅ Saved: docs/images/finviz_before.png")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not capture finviz.com directly: {e}")
+
+        print("\n📸 Capturing AFTER screenshots: Browser UI with markdown...")
+
+        # 2. Load the browser UI with finviz URL
+        await page.goto("http://localhost:8000/browser?url=https://finviz.com", wait_until="load", timeout=30000)
+        print("   Browser UI loaded, waiting for content processing...")
+        
+        # Wait for the welcome message to disappear and content to load
+        # We'll wait for status bar to show it's done
+        await page.wait_for_timeout(5000)
+        
+        # Wait for rendered content to appear (not the welcome message)
+        try:
+            await page.wait_for_function(
+                """() => {
+                    const content = document.querySelector('#rendered-content');
+                    if (!content) return false;
+                    const text = content.textContent || '';
+                    // Check if it has real content, not just the welcome message
+                    return text.includes('Finviz') || text.includes('DOW') || text.length > 500;
+                }""",
+                timeout=120000  # 2 minutes for finviz to be captured and processed
             )
+            print("   ✓ Content loaded successfully")
+        except Exception as e:
+            print(f"   ⚠️  Warning: Timeout waiting for content, proceeding anyway: {e}")
+        
+        await page.wait_for_timeout(2000)
 
-            # Capture Hacker News (moderate complexity)
-            await capture_original_page(
-                page,
-                URLS["hackernews"],
-                SCREENSHOTS_DIR / "hackernews_before.png"
-            )
+        # 3. Capture RENDERED view first (it's the default)
+        await page.screenshot(path=str(output_dir / "finviz_after_rendered.png"), full_page=True)
+        print("✅ Saved: docs/images/finviz_after_rendered.png")
 
-            # Capture finviz (complex page)
-            await capture_original_page(
-                page,
-                URLS["finviz"],
-                SCREENSHOTS_DIR / "finviz_before.png"
-            )
+        # 4. Click "Raw" button to show raw markdown
+        print("   Switching to raw markdown view...")
+        try:
+            await page.click("#raw-btn")
+            await page.wait_for_timeout(1000)
+            
+            # Wait for raw content to be visible
+            await page.wait_for_selector("#raw-content.active", timeout=5000)
+        except Exception as e:
+            print(f"   ⚠️  Note: Could not switch to raw view: {e}")
 
-            print("\n" + "="*60)
-            print("✅ Original page screenshots complete!")
-            print("="*60)
-            print("\nTo capture 'after' screenshots of the browser UI:")
-            print("1. Start the server: uv run python -m app.cli serve")
-            print("2. Run this script with --with-ui flag")
-            print("="*60)
+        await page.screenshot(path=str(output_dir / "finviz_after_raw.png"), full_page=True)
+        print("✅ Saved: docs/images/finviz_after_raw.png")
 
-        finally:
-            await browser.close()
+        await browser.close()
+
+    print("\n✨ All screenshots captured successfully!")
+    print(f"   Location: {output_dir.absolute()}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(capture_screenshots())
