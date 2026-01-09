@@ -30,3 +30,6 @@ beads.right.meta.json
 !issues.jsonl
 !metadata.json
 !config.json
+
+# Compressed daemon logs (timestamped)
+daemon-*.log.gz
