@@ -36,3 +36,6 @@ daemon-*.log.gz
 
 # bv (beads viewer) lock file
 .bv.lock
+
+# Local history backups
+.br_history/
