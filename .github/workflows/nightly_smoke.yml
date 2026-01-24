@@ -83,6 +83,10 @@ jobs:
           RUNS_DB_PATH=runs.db
           PROMETHEUS_PORT=9000
           HTMX_SSE_HEARTBEAT_MS=4000
+          BLOCKLIST_PATH=config/blocklist.json
+          SCROLL_SHRINK_WARNING_THRESHOLD=1
+          OVERLAP_WARNING_RATIO=0.65
+          WARNING_LOG_PATH=ops/warnings.jsonl
           EOF
 
       - name: Install Playwright browsers
