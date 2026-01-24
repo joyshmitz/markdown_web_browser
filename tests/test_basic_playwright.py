@@ -17,7 +17,7 @@ async def test_basic_screenshot():
         # Launch browser
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            viewport={'width': 1280, 'height': 800},
+            viewport={"width": 1280, "height": 800},
             device_scale_factor=1,
         )
         page = await context.new_page()
@@ -55,15 +55,16 @@ async def test_viewport_sweep():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            viewport={'width': 1280, 'height': 800},
+            viewport={"width": 1280, "height": 800},
             device_scale_factor=1,
         )
         page = await context.new_page()
 
         # Navigate to a longer page
         print("Navigating to a longer page...")
-        await page.goto("https://en.wikipedia.org/wiki/Python_(programming_language)",
-                       wait_until="networkidle")
+        await page.goto(
+            "https://en.wikipedia.org/wiki/Python_(programming_language)", wait_until="networkidle"
+        )
 
         # Get initial scroll height
         scroll_height = await page.evaluate("document.documentElement.scrollHeight")
@@ -134,4 +135,5 @@ async def main():
 if __name__ == "__main__":
     success = asyncio.run(main())
     import sys
+
     sys.exit(0 if success else 1)

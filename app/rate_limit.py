@@ -85,9 +85,7 @@ class TokenBucket:
         """Get current bucket statistics."""
         self._refill()
         # Prevent division by zero if capacity is 0
-        utilization = (
-            1.0 - (self.tokens / self.capacity) if self.capacity > 0 else 0.0
-        )
+        utilization = 1.0 - (self.tokens / self.capacity) if self.capacity > 0 else 0.0
         return {
             "tokens": self.tokens,
             "capacity": self.capacity,
@@ -113,9 +111,7 @@ class RateLimiter:
             ValueError: If requests_per_minute is not positive
         """
         if requests_per_minute <= 0:
-            raise ValueError(
-                f"requests_per_minute must be positive, got {requests_per_minute}"
-            )
+            raise ValueError(f"requests_per_minute must be positive, got {requests_per_minute}")
 
         self.requests_per_minute = requests_per_minute
         self.requests_per_second = requests_per_minute / 60.0
@@ -159,9 +155,7 @@ class RateLimiter:
         stats["remaining"] = int(bucket.tokens)
         # Reset = when bucket will be completely full (burst capacity restored)
         # Note: You may still have tokens available before this time
-        stats["reset"] = int(
-            time.time() + bucket.time_until_available(self.burst_capacity)
-        )
+        stats["reset"] = int(time.time() + bucket.time_until_available(self.burst_capacity))
 
         if not allowed:
             # Retry after = when next single token will be available
@@ -221,9 +215,7 @@ def get_rate_limiter(settings: Settings | None = None) -> RateLimiter:
             active_settings = settings or global_settings
 
             # Get rate limit from settings, default to 60 requests per minute
-            requests_per_minute = getattr(
-                active_settings, "RATE_LIMIT_PER_MINUTE", 60
-            )
+            requests_per_minute = getattr(active_settings, "RATE_LIMIT_PER_MINUTE", 60)
 
             _global_limiter = RateLimiter(requests_per_minute=requests_per_minute)
 

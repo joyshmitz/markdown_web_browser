@@ -54,13 +54,19 @@ class FlowLogger:
         if outputs:
             sections.append(_mapping_table("Outputs", outputs, self.flow_name))
         self._record_step(title)
-        self.console.print(Panel.fit(Group(*sections), title=f"Step ▸ {title}", border_style="blue"))
+        self.console.print(
+            Panel.fit(Group(*sections), title=f"Step ▸ {title}", border_style="blue")
+        )
         if command:
-            self.console.print(Panel.fit(command, title=f"Command ▸ {title}", border_style="magenta"))
+            self.console.print(
+                Panel.fit(command, title=f"Command ▸ {title}", border_style="magenta")
+            )
         if syntax_blocks:
             for language, snippet in syntax_blocks:
                 syntax = Syntax(snippet, language, theme="ansi_dark")
-                self.console.print(Panel.fit(syntax, title=f"Context ▸ {title}", border_style="cyan"))
+                self.console.print(
+                    Panel.fit(syntax, title=f"Context ▸ {title}", border_style="cyan")
+                )
 
     def finish(self, summary: Mapping[str, LogValue]) -> None:
         self._render_progress()

@@ -124,7 +124,9 @@ def capture_markdown(
     effective_job_id = job_id
     snapshot: dict
 
-    shared_client: httpx.Client | None = mdwb_cli._client(settings, http2=http2) if reuse_session else None
+    shared_client: httpx.Client | None = (
+        mdwb_cli._client(settings, http2=http2) if reuse_session else None
+    )
     try:
         if effective_job_id is None:
             job = submit_job(
@@ -152,7 +154,9 @@ def capture_markdown(
         state = snapshot.get("state")
         if state != "DONE":
             manifest = snapshot.get("manifest")
-            raise RuntimeError(f"Job {effective_job_id} finished in state {state}: {manifest or snapshot}")
+            raise RuntimeError(
+                f"Job {effective_job_id} finished in state {state}: {manifest or snapshot}"
+            )
 
         markdown = fetch_markdown(effective_job_id, settings, http2=http2, client=shared_client)
         return CaptureResult(job_id=effective_job_id, snapshot=snapshot, markdown=markdown)

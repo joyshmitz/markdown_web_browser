@@ -122,7 +122,9 @@ def test_generate_todos_cli_writes_json(monkeypatch, tmp_path: Path):
 
 
 def test_capture_markdown_validates_missing_job_id(monkeypatch):
-    settings = mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    settings = mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
     def fake_submit_job(**kwargs):  # noqa: ANN001
         return {"state": "BROWSER_STARTING"}
@@ -140,7 +142,9 @@ def test_capture_markdown_validates_missing_job_id(monkeypatch):
 
 
 def test_capture_markdown_requires_url_or_job_id():
-    settings = mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    settings = mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
     with pytest.raises(typer.BadParameter):
         shared.capture_markdown(
             url=None,
@@ -153,10 +157,16 @@ def test_capture_markdown_requires_url_or_job_id():
 
 
 def test_capture_markdown_raises_on_non_done_state(monkeypatch):
-    settings = mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    settings = mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
     monkeypatch.setattr(shared, "submit_job", lambda **kwargs: {"id": "job-1"})
-    monkeypatch.setattr(shared, "wait_for_completion", lambda *args, **kwargs: {"id": "job-1", "state": "FAILED", "manifest": {"error": "boom"}})
+    monkeypatch.setattr(
+        shared,
+        "wait_for_completion",
+        lambda *args, **kwargs: {"id": "job-1", "state": "FAILED", "manifest": {"error": "boom"}},
+    )
     monkeypatch.setattr(shared, "fetch_markdown", lambda *args, **kwargs: "")
 
     with pytest.raises(RuntimeError, match="FAILED"):

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-import re
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -33,10 +32,17 @@ class JobCreateRequest(BaseModel):
             raise ValueError("URL scheme must be http or https")
 
         return value
+
     profile_id: str | None = Field(default=None, description="Browser profile identifier")
-    viewport_width: int | None = Field(default=None, ge=1, le=32767, description="Override viewport width")
-    viewport_height: int | None = Field(default=None, ge=1, le=32767, description="Override viewport height")
-    device_scale_factor: int | None = Field(default=None, ge=1, le=10, description="Override device scale factor")
+    viewport_width: int | None = Field(
+        default=None, ge=1, le=32767, description="Override viewport width"
+    )
+    viewport_height: int | None = Field(
+        default=None, ge=1, le=32767, description="Override viewport height"
+    )
+    device_scale_factor: int | None = Field(
+        default=None, ge=1, le=10, description="Override device scale factor"
+    )
     color_scheme: str | None = Field(default=None, description="Override color scheme (light|dark)")
 
     @field_validator("color_scheme")
@@ -50,8 +56,13 @@ class JobCreateRequest(BaseModel):
             raise ValueError("color_scheme must be 'light' or 'dark'")
 
         return value
-    long_side_px: int | None = Field(default=None, ge=1, le=16384, description="Override tile longest side policy")
-    reuse_cache: bool = Field(default=True, description="Reuse cached captures when an identical configuration exists")
+
+    long_side_px: int | None = Field(
+        default=None, ge=1, le=16384, description="Override tile longest side policy"
+    )
+    reuse_cache: bool = Field(
+        default=True, description="Reuse cached captures when an identical configuration exists"
+    )
 
 
 class ReplayRequest(BaseModel):
@@ -75,15 +86,23 @@ class JobSnapshotResponse(BaseModel):
     id: str
     state: str
     url: str
-    progress: dict[str, int] | None = Field(default=None, description="Tile progress (done vs total)")
-    manifest_path: str | None = Field(default=None, description="Filesystem path to manifest.json if persisted")
+    progress: dict[str, int] | None = Field(
+        default=None, description="Tile progress (done vs total)"
+    )
+    manifest_path: str | None = Field(
+        default=None, description="Filesystem path to manifest.json if persisted"
+    )
     manifest: ManifestMetadata | dict[str, Any] | None = Field(
         default=None,
         description="Latest manifest payload if available",
     )
     error: str | None = Field(default=None, description="Failure message when state=FAILED")
-    profile_id: str | None = Field(default=None, description="Profile identifier requested for the capture")
-    cache_hit: bool | None = Field(default=None, description="True when the job reused cached artifacts")
+    profile_id: str | None = Field(
+        default=None, description="Profile identifier requested for the capture"
+    )
+    cache_hit: bool | None = Field(
+        default=None, description="True when the job reused cached artifacts"
+    )
 
 
 class ConcurrencyWindow(BaseModel):
@@ -112,7 +131,9 @@ class ManifestEnvironment(BaseModel):
         description="ASGI server runtime handling the job (e.g., uvicorn or granian)",
     )
     playwright_channel: str = Field(description="Playwright browser channel")
-    playwright_version: str | None = Field(default=None, description="Resolved Playwright version at runtime")
+    playwright_version: str | None = Field(
+        default=None, description="Resolved Playwright version at runtime"
+    )
     browser_transport: str = Field(description="Browser transport (cdp or bidi)")
     viewport: ViewportSettings = Field(description="Viewport used during capture")
     viewport_overlap_px: int = Field(ge=0, description="Overlap between viewport sweeps")
@@ -153,8 +174,12 @@ class ManifestSweepStats(BaseModel):
     sweep_count: int = Field(ge=0, description="Number of viewport sweeps performed")
     total_scroll_height: int = Field(ge=0, description="Final scroll height observed")
     shrink_events: int = Field(ge=0, description="How often the page height shrank mid-run")
-    retry_attempts: int = Field(ge=0, description="Viewport sweep retries triggered by shrink events")
-    overlap_pairs: int = Field(ge=0, description="Adjacent tile pairs compared for overlap matching")
+    retry_attempts: int = Field(
+        ge=0, description="Viewport sweep retries triggered by shrink events"
+    )
+    overlap_pairs: int = Field(
+        ge=0, description="Adjacent tile pairs compared for overlap matching"
+    )
     overlap_match_ratio: float | None = Field(
         default=None,
         ge=0.0,
@@ -290,9 +315,12 @@ class ManifestMetadata(BaseModel):
 class EmbeddingSearchRequest(BaseModel):
     """Payload for querying sqlite-vec section embeddings."""
 
-    vector: list[float] = Field(description="Normalized embedding vector", min_length=EMBEDDING_DIM, max_length=EMBEDDING_DIM)
+    vector: list[float] = Field(
+        description="Normalized embedding vector",
+        min_length=EMBEDDING_DIM,
+        max_length=EMBEDDING_DIM,
+    )
     top_k: int = Field(default=5, ge=1, le=50)
-
 
 
 class SectionEmbeddingMatch(BaseModel):
@@ -333,6 +361,7 @@ class WebhookRegistrationRequest(BaseModel):
             raise ValueError("Webhook URL scheme must be http or https")
 
         return value
+
     events: list[str] | None = Field(
         default=None,
         description="States that should trigger the webhook (defaults to DONE/FAILED)",

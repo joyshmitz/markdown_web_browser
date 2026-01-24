@@ -248,7 +248,9 @@ def run_category_dry(category: Category, out_dir: Path, seed: int | None = None)
             "blocklist_hits": {},
         }
         (job_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        (job_dir / "out.md").write_text("# Dry Run\n\nNo real capture was executed.", encoding="utf-8")
+        (job_dir / "out.md").write_text(
+            "# Dry Run\n\nNo real capture was executed.", encoding="utf-8"
+        )
         (job_dir / "links.json").write_text("[]", encoding="utf-8")
 
         timings_value = manifest.get("timings")
@@ -303,7 +305,9 @@ def write_manifest_index(date_dir: Path, records: list[RunRecord]) -> Path:
     return index_path
 
 
-def write_slo_outputs(date_dir: Path, manifest_index: Path, budget_map: dict[str, int]) -> tuple[Path, Path]:
+def write_slo_outputs(
+    date_dir: Path, manifest_index: Path, budget_map: dict[str, int]
+) -> tuple[Path, Path]:
     if not manifest_index.exists():
         raise FileNotFoundError(f"Manifest index not found: {manifest_index}")
     entries: list[dict[str, Any]] = json.loads(manifest_index.read_text(encoding="utf-8"))
@@ -341,7 +345,9 @@ def _aggregate_category_stats(records: list[RunRecord]) -> list[dict[str, Any]]:
     return stats
 
 
-def write_summary_markdown(date_dir: Path, records: list[RunRecord]) -> tuple[Path, list[dict[str, Any]]]:
+def write_summary_markdown(
+    date_dir: Path, records: list[RunRecord]
+) -> tuple[Path, list[dict[str, Any]]]:
     lines: list[str] = [f"# Nightly Smoke — {date_dir.name}", ""]
     stats = _aggregate_category_stats(records)
     grouped: dict[str, list[RunRecord]] = defaultdict(list)
@@ -449,7 +455,9 @@ def update_weekly_summary(config: dict[str, Any], window_days: int = 7) -> None:
     budgets = {cat["name"]: cat.get("p95_budget_ms") for cat in config.get("categories", [])}
 
     for category, entries in sorted(metrics.items()):
-        capture_values = [entry["capture_ms"] for entry in entries if entry.get("capture_ms") is not None]
+        capture_values = [
+            entry["capture_ms"] for entry in entries if entry.get("capture_ms") is not None
+        ]
         total_values = [entry["total_ms"] for entry in entries if entry.get("total_ms") is not None]
         seam_counts = [
             entry.get("seam_marker_count")
@@ -514,13 +522,17 @@ def update_weekly_summary(config: dict[str, Any], window_days: int = 7) -> None:
             slo_block["capture_budget_ms"] = capture_budget
             slo_block["capture_p99_ms"] = capture_p99
             slo_block["capture_ok"] = (
-                capture_p99 is not None and capture_budget is not None and capture_p99 <= capture_budget
+                capture_p99 is not None
+                and capture_budget is not None
+                and capture_p99 <= capture_budget
             )
         if ocr_p95 is not None:
             ocr_budget = ocr_p95 * 2
             slo_block["ocr_budget_ms"] = ocr_budget
             slo_block["ocr_p99_ms"] = ocr_p99
-            slo_block["ocr_ok"] = ocr_p99 is not None and ocr_budget is not None and ocr_p99 <= ocr_budget
+            slo_block["ocr_ok"] = (
+                ocr_p99 is not None and ocr_budget is not None and ocr_p99 <= ocr_budget
+            )
         if slo_block:
             category_entry["slo"] = slo_block
         seam_block: dict[str, Any] = {}
@@ -571,11 +583,20 @@ def update_weekly_slo_summary(budget_map: Mapping[str, int], window_days: int = 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run nightly smoke captures per PLAN §22")
     parser.add_argument("--date", help="Override run date (YYYY-MM-DD)")
-    parser.add_argument("--http2", action=argparse.BooleanOptionalAction, default=True, help="Toggle HTTP/2")
+    parser.add_argument(
+        "--http2", action=argparse.BooleanOptionalAction, default=True, help="Toggle HTTP/2"
+    )
     parser.add_argument("--poll-interval", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=900.0)
-    parser.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=False, help="Skip API calls and emit synthetic records.")
-    parser.add_argument("--seed", type=int, help="Optional RNG seed for --dry-run mode (default deterministic)")
+    parser.add_argument(
+        "--dry-run",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Skip API calls and emit synthetic records.",
+    )
+    parser.add_argument(
+        "--seed", type=int, help="Optional RNG seed for --dry-run mode (default deterministic)"
+    )
     parser.add_argument(
         "--category",
         action="append",

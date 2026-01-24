@@ -262,7 +262,9 @@ async def submit_tiles(
     """Submit tiles to the configured olmOCR endpoint and return Markdown + telemetry."""
 
     if not requests:
-        empty_quota = OCRQuotaStatus(limit=None, used=None, threshold_ratio=_QUOTA_WARNING_RATIO, warning_triggered=False)
+        empty_quota = OCRQuotaStatus(
+            limit=None, used=None, threshold_ratio=_QUOTA_WARNING_RATIO, warning_triggered=False
+        )
         return SubmitTilesResult(markdown_chunks=[], batches=[], quota=empty_quota)
 
     cfg = cast(Settings, settings or get_settings())
@@ -283,7 +285,9 @@ async def submit_tiles(
 
     # For OpenAI-compatible endpoints, force 1 tile per batch since the API
     # returns a single combined response for multiple images
-    max_batch_tiles = 1 if endpoint.endswith("/chat/completions") else max(1, cfg.ocr.max_batch_tiles)
+    max_batch_tiles = (
+        1 if endpoint.endswith("/chat/completions") else max(1, cfg.ocr.max_batch_tiles)
+    )
 
     batches = _group_tiles(
         encoded_tiles,
@@ -314,7 +318,9 @@ async def submit_tiles(
         if owns_client:
             await http_client.aclose()
 
-    quota_status = _quota_tracker.record(len(requests), limit=cfg.ocr.daily_quota_tiles, ratio=_QUOTA_WARNING_RATIO)
+    quota_status = _quota_tracker.record(
+        len(requests), limit=cfg.ocr.daily_quota_tiles, ratio=_QUOTA_WARNING_RATIO
+    )
     markdown_chunks = [markdown_by_id[tile.tile_id] for tile in encoded_tiles]
     return SubmitTilesResult(
         markdown_chunks=markdown_chunks,
@@ -383,7 +389,9 @@ async def _submit_batch(
             )
         except Exception as exc:
             last_error = exc
-            LOGGER.warning("olmOCR request error on attempt %s/%s: %s", attempts, _MAX_ATTEMPTS, exc)
+            LOGGER.warning(
+                "olmOCR request error on attempt %s/%s: %s", attempts, _MAX_ATTEMPTS, exc
+            )
         if attempts >= _MAX_ATTEMPTS:
             break
         await _sleep(_BACKOFF_SCHEDULE[attempts - 1])
@@ -405,36 +413,32 @@ def _build_payload(tiles: Sequence[_EncodedTile], *, use_fp8: bool) -> dict:
     # olmOCR's official prompt from build_no_anchoring_v4_yaml_prompt()
     # https://github.com/allenai/olmocr/blob/main/olmocr/prompts/prompts.py
     # Note: Model doesn't format output with markdown syntax (headings, bold, etc) despite instructions
-    content = [{
-        "type": "text",
-        "text": (
-            "Attached is one page of a document that you must process. "
-            "Just return the plain text representation of this document as if you were reading it naturally. "
-            "Convert equations to LaTeX and tables to HTML.\n"
-            "If there are any figures or charts, label them with the following markdown syntax "
-            "![Alt text describing the contents of the figure](page_startx_starty_width_height.png)\n"
-            "Return your output as markdown, with a front matter section on top specifying values for the "
-            "primary_language, is_rotation_valid, rotation_correction, is_table, and is_diagram parameters."
-        )
-    }]
+    content = [
+        {
+            "type": "text",
+            "text": (
+                "Attached is one page of a document that you must process. "
+                "Just return the plain text representation of this document as if you were reading it naturally. "
+                "Convert equations to LaTeX and tables to HTML.\n"
+                "If there are any figures or charts, label them with the following markdown syntax "
+                "![Alt text describing the contents of the figure](page_startx_starty_width_height.png)\n"
+                "Return your output as markdown, with a front matter section on top specifying values for the "
+                "primary_language, is_rotation_valid, rotation_correction, is_table, and is_diagram parameters."
+            ),
+        }
+    ]
 
     # Add all tile images
     for tile in tiles:
-        content.append({
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/png;base64,{tile.image_b64}"
-            }
-        })
+        content.append(
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{tile.image_b64}"}}
+        )
 
     return {
         "model": model,
-        "messages": [{
-            "role": "user",
-            "content": content
-        }],
+        "messages": [{"role": "user", "content": content}],
         "max_tokens": 8000,  # Match olmOCR toolkit configuration
-        "temperature": 0.1  # Low temperature for deterministic OCR output (per olmOCR docs)
+        "temperature": 0.1,  # Low temperature for deterministic OCR output (per olmOCR docs)
     }
 
 

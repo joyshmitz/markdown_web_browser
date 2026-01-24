@@ -56,7 +56,7 @@ def extract_headings_from_html(html: bytes | str) -> Sequence[DomHeading]:
         if not text:
             continue
         try:
-            level = int(tag.name[1])  # type: ignore[index]
+            level = int(tag.name[1])
         except (ValueError, TypeError, IndexError):
             continue
         normalized = normalize_heading_text(text)
@@ -105,12 +105,15 @@ def extract_links_from_dom(dom_snapshot: Path) -> Sequence[LinkRecord]:
     records: list[LinkRecord] = []
 
     for anchor in soup.find_all("a"):
-        href = anchor.get("href")
-        if not href:
+        href_attr = anchor.get("href")
+        if not href_attr:
             continue
+        # BeautifulSoup can return list for multi-value attrs; take first if list
+        href = href_attr[0] if isinstance(href_attr, list) else href_attr
         text = anchor.get_text(strip=True)
         rel = _normalize_rel(anchor.get("rel"))
-        target = anchor.get("target")
+        target_attr = anchor.get("target")
+        target = target_attr[0] if isinstance(target_attr, list) else target_attr
         records.append(
             LinkRecord(
                 text=text,
@@ -125,12 +128,16 @@ def extract_links_from_dom(dom_snapshot: Path) -> Sequence[LinkRecord]:
         )
 
     for form in soup.find_all("form"):
-        action = form.get("action") or ""
-        if not action:
+        action_attr = form.get("action") or ""
+        if not action_attr:
             continue
-        label = form.get("aria-label") or form.get("name") or "[form]"
+        # BeautifulSoup can return list for multi-value attrs; take first if list
+        action = action_attr[0] if isinstance(action_attr, list) else action_attr
+        label_attr = form.get("aria-label") or form.get("name") or "[form]"
+        label = label_attr[0] if isinstance(label_attr, list) else label_attr
         rel = _normalize_rel(form.get("rel"))
-        target = form.get("target")
+        target_attr = form.get("target")
+        target = target_attr[0] if isinstance(target_attr, list) else target_attr
         records.append(
             LinkRecord(
                 text=label,
@@ -256,7 +263,13 @@ def demo_dom_links() -> list[LinkRecord]:
             rel=("noopener",),
             domain="example.com",
         ),
-        LinkRecord(text="Support", href="https://example.com/support", source="DOM", delta="✓", domain="example.com"),
+        LinkRecord(
+            text="Support",
+            href="https://example.com/support",
+            source="DOM",
+            delta="✓",
+            domain="example.com",
+        ),
     ]
 
 

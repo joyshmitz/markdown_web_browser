@@ -73,6 +73,7 @@ def test_cursor_from_line_uses_snapshot_timestamp_when_missing_top_level():
 def test_iter_event_lines_updates_cursor_and_closes_client(monkeypatch):
     responses = [FakeResponse([json.dumps({"timestamp": "2025-11-08T00:00:00+00:00"})])]
     fake_client = FakeClient(responses)
+
     @contextmanager
     def fake_client_ctx(settings, **_):  # noqa: ANN001
         try:
@@ -155,9 +156,11 @@ def test_watch_job_events_pretty_renders_snapshot(monkeypatch):
 
 def test_log_event_formats_blocklist_and_sweep():
     with mdwb_cli.console.capture() as capture:
-        mdwb_cli._log_event("blocklist", "{\"#cookie\":2}")
-        mdwb_cli._log_event("sweep", "{\"sweep_stats\":{\"shrink_events\":1},\"overlap_match_ratio\":0.92}")
-        mdwb_cli._log_event("validation", "[\"Tile checksum mismatch\"]")
+        mdwb_cli._log_event("blocklist", '{"#cookie":2}')
+        mdwb_cli._log_event(
+            "sweep", '{"sweep_stats":{"shrink_events":1},"overlap_match_ratio":0.92}'
+        )
+        mdwb_cli._log_event("validation", '["Tile checksum mismatch"]')
     output = capture.get()
     assert "#cookie:2" in output
     assert "ratio 0.92" in output
@@ -266,7 +269,9 @@ def test_watch_job_events_pretty_triggers_hooks_in_raw_mode(monkeypatch):
     ]
     monkeypatch.setattr(mdwb_cli, "_iter_event_lines", lambda *_, **__: iter(events))
     received: list[dict[str, Any]] = []
-    monkeypatch.setattr(mdwb_cli, "_trigger_event_hooks", lambda entry, hooks: received.append(entry))
+    monkeypatch.setattr(
+        mdwb_cli, "_trigger_event_hooks", lambda entry, hooks: received.append(entry)
+    )
 
     with mdwb_cli.console.capture() as capture:
         mdwb_cli._watch_job_events_pretty(
@@ -546,7 +551,15 @@ def test_watch_events_with_fallback_streams_via_sse(monkeypatch):
 
     calls: dict[str, object] = {}
 
-    def fake_stream(job_id: str, settings: mdwb_cli.APISettings, raw: bool, hooks=None, progress_meter=None, client=None, **_):  # noqa: ANN001,E501
+    def fake_stream(
+        job_id: str,
+        settings: mdwb_cli.APISettings,
+        raw: bool,
+        hooks=None,
+        progress_meter=None,
+        client=None,
+        **_,
+    ):  # noqa: ANN001,E501
         calls["job_id"] = job_id
         calls["raw"] = raw
         calls["progress_meter"] = progress_meter
@@ -576,12 +589,26 @@ def test_watch_command_invokes_helper(monkeypatch):
     invoked: list[tuple] = []
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda api_base: API_SETTINGS)
 
-    def fake_helper(job_id, settings, cursor, follow, interval, raw, hooks, on_terminal=None, progress_meter=None, client=None, **_):  # noqa: ANN001,E501
+    def fake_helper(
+        job_id,
+        settings,
+        cursor,
+        follow,
+        interval,
+        raw,
+        hooks,
+        on_terminal=None,
+        progress_meter=None,
+        client=None,
+        **_,
+    ):  # noqa: ANN001,E501
         invoked.append((job_id, cursor, follow, interval, raw, hooks, progress_meter, client))
 
     monkeypatch.setattr(mdwb_cli, "_watch_events_with_fallback", fake_helper)
 
-    result = runner.invoke(mdwb_cli.cli, ["watch", "job123", "--interval", "0.5", "--raw", "--on", "snapshot=echo hi"])
+    result = runner.invoke(
+        mdwb_cli.cli, ["watch", "job123", "--interval", "0.5", "--raw", "--on", "snapshot=echo hi"]
+    )
 
     assert result.exit_code == 0
     assert len(invoked) == 1
@@ -671,8 +698,9 @@ def test_run_hook_properly_escapes_environment_variables(monkeypatch):
     # Verify that dangerous sequences cannot execute as shell commands
     # The malicious content should be contained within quotes
     assert event_name == shlex.quote(malicious_event)
-    assert payload_str == shlex.quote('{"data": "\'; cat /etc/passwd; echo \'"}') or \
-           payload_str == shlex.quote(str(malicious_payload))
+    assert payload_str == shlex.quote(
+        '{"data": "\'; cat /etc/passwd; echo \'"}'
+    ) or payload_str == shlex.quote(str(malicious_payload))
 
     # The command itself should still be the original (we only escape env vars)
     assert captured_command == "echo 'test'"

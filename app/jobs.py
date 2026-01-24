@@ -121,6 +121,8 @@ def build_initial_snapshot(
         manifest.cache_hit = cache_hit
         snapshot["manifest"] = manifest.model_dump()
     return snapshot
+
+
 RunnerType = Callable[..., Awaitable[tuple[CaptureResult, list[dict[str, object]]]]]
 
 
@@ -195,7 +197,9 @@ class JobManager:
             self._set_state(job_id, JobState.DONE)
             return self._snapshot_payload(job_id)
 
-        task = asyncio.create_task(self._run_job(job_id=job_id, url=request.url, config=capture_config))
+        task = asyncio.create_task(
+            self._run_job(job_id=job_id, url=request.url, config=capture_config)
+        )
         self._tasks[job_id] = task
         return self._snapshot_payload(job_id)
 
@@ -324,7 +328,9 @@ class JobManager:
 
                 # Normalize finished_at to UTC-naive for comparison
                 finished_at = record.finished_at
-                finished_at_naive = finished_at.replace(tzinfo=None) if finished_at.tzinfo else finished_at
+                finished_at_naive = (
+                    finished_at.replace(tzinfo=None) if finished_at.tzinfo else finished_at
+                )
                 cutoff_naive = cutoff_time.replace(tzinfo=None)
 
                 if finished_at_naive < cutoff_naive:
@@ -378,7 +384,9 @@ class JobManager:
                     # Calculate elapsed time (SQLite strips timezone, so normalize both to UTC-naive)
                     started_at = record.started_at
                     # Normalize both timestamps to naive UTC for consistent comparison
-                    started_at_naive = started_at.replace(tzinfo=None) if started_at.tzinfo else started_at
+                    started_at_naive = (
+                        started_at.replace(tzinfo=None) if started_at.tzinfo else started_at
+                    )
                     now_naive = now.replace(tzinfo=None)
                     elapsed_seconds = (now_naive - started_at_naive).total_seconds()
 
@@ -458,13 +466,19 @@ class JobManager:
             self._emit_dom_assist_event(job_id, capture_result.manifest)
             self._set_state(job_id, JobState.DONE)
             await asyncio.to_thread(
-                storage.update_status, job_id=job_id, status=JobState.DONE, finished_at=datetime.now(timezone.utc)
+                storage.update_status,
+                job_id=job_id,
+                status=JobState.DONE,
+                finished_at=datetime.now(timezone.utc),
             )
         except Exception as exc:  # pragma: no cover - surfaced to API callers
             self._set_state(job_id, JobState.FAILED)
             self._set_error(job_id, str(exc))
             await asyncio.to_thread(
-                storage.update_status, job_id=job_id, status=JobState.FAILED, finished_at=datetime.now(timezone.utc)
+                storage.update_status,
+                job_id=job_id,
+                status=JobState.FAILED,
+                finished_at=datetime.now(timezone.utc),
             )
             raise
         finally:
@@ -501,11 +515,7 @@ class JobManager:
         if since is None:
             if min_sequence is None:
                 return [event.copy() for event in events]
-            return [
-                event.copy()
-                for event in events
-                if self._sequence_newer(event, min_sequence)
-            ]
+            return [event.copy() for event in events if self._sequence_newer(event, min_sequence)]
         filtered: List[dict[str, Any]] = []
         for event in events:
             parsed_ts = self._parse_timestamp(event.get("timestamp"))
@@ -533,7 +543,9 @@ class JobManager:
         except KeyError:
             self._pending_webhooks.setdefault(job_id, []).append(entry)
 
-    def delete_webhook(self, job_id: str, *, webhook_id: int | None = None, url: str | None = None) -> int:
+    def delete_webhook(
+        self, job_id: str, *, webhook_id: int | None = None, url: str | None = None
+    ) -> int:
         """Remove webhook registrations from persistence + in-memory caches."""
 
         try:
@@ -557,7 +569,9 @@ class JobManager:
     ) -> int:
         """Delete webhook entries from in-memory caches and pending queues."""
 
-        removed = self._prune_webhook_entries(self._webhooks, job_id, webhook_id=webhook_id, url=url)
+        removed = self._prune_webhook_entries(
+            self._webhooks, job_id, webhook_id=webhook_id, url=url
+        )
         pending_removed = self._prune_webhook_entries(
             self._pending_webhooks, job_id, webhook_id=webhook_id, url=url
         )
@@ -975,9 +989,21 @@ def _summarize_ocr_batches(manifest: CaptureManifest) -> dict[str, Any] | None:
     batches = getattr(manifest, "ocr_batches", None)
     if not batches:
         return None
-    latencies = [batch.get("latency_ms") for batch in batches if isinstance(batch.get("latency_ms"), (int, float))]
-    payloads = [batch.get("payload_bytes") for batch in batches if isinstance(batch.get("payload_bytes"), (int, float))]
-    non_2xx = sum(1 for batch in batches if isinstance(batch.get("status_code"), int) and batch["status_code"] >= 400)
+    latencies = [
+        batch.get("latency_ms")
+        for batch in batches
+        if isinstance(batch.get("latency_ms"), (int, float))
+    ]
+    payloads = [
+        batch.get("payload_bytes")
+        for batch in batches
+        if isinstance(batch.get("payload_bytes"), (int, float))
+    ]
+    non_2xx = sum(
+        1
+        for batch in batches
+        if isinstance(batch.get("status_code"), int) and batch["status_code"] >= 400
+    )
     summary: dict[str, Any] = {
         "total_batches": len(batches),
         "non_2xx_batches": non_2xx,
@@ -987,7 +1013,9 @@ def _summarize_ocr_batches(manifest: CaptureManifest) -> dict[str, Any] | None:
         summary["max_latency_ms"] = int(max(latencies))
     if payloads:
         summary["total_payload_bytes"] = int(sum(payloads))
-    last_request_id = next((batch.get("request_id") for batch in reversed(batches) if batch.get("request_id")), None)
+    last_request_id = next(
+        (batch.get("request_id") for batch in reversed(batches) if batch.get("request_id")), None
+    )
     if last_request_id:
         summary["last_request_id"] = last_request_id
     quota = getattr(manifest, "ocr_quota", None) or {}

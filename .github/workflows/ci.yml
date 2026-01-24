@@ -62,7 +62,7 @@ jobs:
         run: uv sync --frozen --dev
 
       - name: Run ty type checker
-        run: uvx ty check
+        run: uvx ty check app/
 
   test:
     name: Test

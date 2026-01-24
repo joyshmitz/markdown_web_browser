@@ -38,13 +38,17 @@ def test_blend_dom_with_ocr_marks_deltas() -> None:
         ),
     ]
     ocr_links = [
-        LinkRecord(text="Docs - Updated", href="https://example.com/docs", source="OCR", delta="OCR only"),
+        LinkRecord(
+            text="Docs - Updated", href="https://example.com/docs", source="OCR", delta="OCR only"
+        ),
         LinkRecord(text="Extra", href="https://example.com/extra", source="OCR", delta="OCR only"),
     ]
 
     blended = blend_dom_with_ocr(dom_links=dom_links, ocr_links=ocr_links)
 
-    assert any(link.source == "DOM+OCR" and link.delta in {"✓", "text mismatch"} for link in blended)
+    assert any(
+        link.source == "DOM+OCR" and link.delta in {"✓", "text mismatch"} for link in blended
+    )
     assert any(link.source == "OCR" and link.delta == "OCR only" for link in blended)
     dom_hybrid = next(link for link in blended if link.source == "DOM+OCR")
     assert dom_hybrid.target == "_blank"

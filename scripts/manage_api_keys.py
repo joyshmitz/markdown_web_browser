@@ -8,7 +8,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
-from datetime import datetime, timezone
 from typing import Optional
 
 from rich.console import Console
@@ -51,7 +50,9 @@ def cmd_create(
 
         console.print("\n🔑 [bold red]API Key (save this, it won't be shown again):[/bold red]")
         console.print(f"\n  [bold white]{plain_key}[/bold white]\n")
-        console.print(f"Use this key in requests with header: [cyan]X-API-Key: {plain_key}[/cyan]\n")
+        console.print(
+            f"Use this key in requests with header: [cyan]X-API-Key: {plain_key}[/cyan]\n"
+        )
 
 
 def cmd_list() -> None:
@@ -130,7 +131,9 @@ def cmd_show(key_id: int) -> None:
         table.add_row("Rate Limit", str(api_key.rate_limit) if api_key.rate_limit else "Unlimited")
         table.add_row("Owner", api_key.owner or "None")
         table.add_row("Created", api_key.created_at.isoformat())
-        table.add_row("Last Used", api_key.last_used_at.isoformat() if api_key.last_used_at else "Never")
+        table.add_row(
+            "Last Used", api_key.last_used_at.isoformat() if api_key.last_used_at else "Never"
+        )
 
         console.print()
         console.print(table)

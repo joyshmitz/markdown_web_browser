@@ -17,7 +17,18 @@ from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, ContextManager, Iterable, Iterator, Mapping, Optional, Sequence, TextIO, Tuple
+from typing import (
+    Any,
+    Callable,
+    ContextManager,
+    Iterable,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+    TextIO,
+    Tuple,
+)
 
 import httpx
 import sys
@@ -71,7 +82,9 @@ def _load_env_settings() -> APISettings:
         api_key = config("MDWB_API_KEY", default=None)
         warning_log = Path(config("WARNING_LOG_PATH", default="ops/warnings.jsonl"))
         return APISettings(base_url=base_url, api_key=api_key, warning_log_path=warning_log)
-    return APISettings(base_url="http://localhost:8000", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return APISettings(
+        base_url="http://localhost:8000", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def _resolve_settings(override_base: Optional[str]) -> APISettings:
@@ -194,6 +207,7 @@ class ResumeManager:
                 placeholders.append(entry_value or f"hash:{hash_value}")
             all_entries = completed + placeholders
         else:
+
             def _sort_key(item: tuple[str, str | None]) -> tuple[int, str]:
                 hash_value, entry_value = item
                 if entry_value:
@@ -299,7 +313,9 @@ class ResumeManager:
             dctx = zstd.ZstdDecompressor()
             with self.index_path.open("rb") as compressed:
                 with dctx.stream_reader(compressed) as reader:
-                    with io.TextIOWrapper(reader, encoding="utf-8", errors="replace") as text_stream:
+                    with io.TextIOWrapper(
+                        reader, encoding="utf-8", errors="replace"
+                    ) as text_stream:
                         csv_reader = csv.reader(text_stream)
                         for row in csv_reader:
                             if not row:
@@ -313,6 +329,7 @@ class ResumeManager:
             return None
         self._index_cache = mapping
         return mapping
+
 
 class _ProgressMeter:
     def __init__(self) -> None:
@@ -359,10 +376,16 @@ def _format_duration_short(seconds: float) -> str:
 
 @resume_cli.command("status")
 def resume_status(
-    root: Path = typer.Option(Path("."), "--root", "-r", help="Resume root containing done_flags/work_index."),
+    root: Path = typer.Option(
+        Path("."), "--root", "-r", help="Resume root containing done_flags/work_index."
+    ),
     limit: int = typer.Option(10, min=0, help="Maximum entries to display (0 = unlimited)."),
-    pending: bool = typer.Option(False, "--pending/--no-pending", help="Also list pending entries (from work_index)."),
-    json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON instead of tables."),
+    pending: bool = typer.Option(
+        False, "--pending/--no-pending", help="Also list pending entries (from work_index)."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json/--no-json", help="Emit JSON instead of tables."
+    ),
 ) -> None:
     """Inspect the completion state tracked by --resume."""
 
@@ -372,7 +395,9 @@ def resume_status(
     index_mapping = manager._load_index() or {}
     done_entries = manager._done_entries()
     if index_mapping:
-        orphan_flags = sorted(hash_value for hash_value in manager._done_hashes() if hash_value not in index_mapping)
+        orphan_flags = sorted(
+            hash_value for hash_value in manager._done_hashes() if hash_value not in index_mapping
+        )
     else:
         orphan_flags = sorted(hash_value for hash_value, entry in done_entries.items() if not entry)
     if orphan_flags:
@@ -490,14 +515,22 @@ def _print_ocr_metrics(manifest: dict[str, Any], *, json_output: bool) -> None:
         quota_table.add_row(
             str(quota.get("limit", "—")),
             str(quota.get("used", "—")),
-            f"{float(threshold)*100:.0f}%",
+            f"{float(threshold) * 100:.0f}%",
             "⚠" if quota.get("warning_triggered") else "—",
         )
         console.print(quota_table)
 
     _print_ocr_autotune(autotune)
 
-    table = Table("Tile IDs", "Latency (ms)", "Status", "Attempts", "Request ID", "Payload (bytes)", title="OCR Batches")
+    table = Table(
+        "Tile IDs",
+        "Latency (ms)",
+        "Status",
+        "Attempts",
+        "Request ID",
+        "Payload (bytes)",
+        title="OCR Batches",
+    )
     if not batches:
         table.add_row("—", "—", "—", "—", "—", "—")
     else:
@@ -543,7 +576,9 @@ def _print_ocr_autotune(autotune: Mapping[str, Any] | None) -> None:
     summary.add_row("Initial", str(autotune.get("initial_limit", "—")))
     summary.add_row("Peak", str(autotune.get("peak_limit", "—")))
     summary.add_row("Final", str(autotune.get("final_limit", "—")))
-    summary.add_row("Events", str(len(autotune.get("events") or []) or autotune.get("event_count", 0)))
+    summary.add_row(
+        "Events", str(len(autotune.get("events") or []) or autotune.get("event_count", 0))
+    )
     console.print(summary)
     events = autotune.get("events") or []
     if not isinstance(events, list) or not events:
@@ -601,7 +636,9 @@ def _parse_vector_input(vector: str | None, vector_file: Path | None) -> list[fl
             try:
                 return [float(value) for value in parsed]
             except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
-                raise typer.BadParameter("Vector list must contain numbers", param_hint=source) from exc
+                raise typer.BadParameter(
+                    "Vector list must contain numbers", param_hint=source
+                ) from exc
 
     parts = raw.replace(",", " ").split()
     if not parts:
@@ -773,7 +810,7 @@ def _iter_event_lines(
     interval: float,
     client: httpx.Client | None = None,
 ):
-    with (nullcontext(client) if client is not None else _client_ctx(settings)) as active_client:
+    with nullcontext(client) if client is not None else _client_ctx(settings) as active_client:
         while True:
             params: dict[str, str] = {}
             if cursor:
@@ -956,16 +993,21 @@ def _render_snapshot(snapshot: dict[str, Any], *, meter: _ProgressMeter | None =
     if error:
         _log_event("log", json.dumps({"error": error}))
 
+
 @cli.command()
 def fetch(
     url: str = typer.Argument(..., help="URL to capture"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     profile: Optional[str] = typer.Option(None, "--profile", help="Browser profile identifier"),
     ocr_policy: Optional[str] = typer.Option(None, "--ocr-policy", help="OCR policy/model id"),
-    watch: bool = typer.Option(False, "--watch/--no-watch", help="Stream job progress after submission"),
+    watch: bool = typer.Option(
+        False, "--watch/--no-watch", help="Stream job progress after submission"
+    ),
     raw: bool = typer.Option(False, "--raw", help="When watching, print raw NDJSON lines"),
     http2: bool = typer.Option(True, "--http2/--no-http2"),
-    progress_eta: bool = typer.Option(True, "--progress/--no-progress", help="Show percent/ETA while streaming events."),
+    progress_eta: bool = typer.Option(
+        True, "--progress/--no-progress", help="Show percent/ETA while streaming events."
+    ),
     resume: bool = typer.Option(
         False,
         "--resume/--no-resume",
@@ -1015,26 +1057,34 @@ def fetch(
     """Submit a new capture job and optionally stream progress."""
 
     if webhook_event and not webhook_url:
-        raise typer.BadParameter("Use --webhook-event together with --webhook-url.", param_hint="--webhook-event")
+        raise typer.BadParameter(
+            "Use --webhook-event together with --webhook-url.", param_hint="--webhook-event"
+        )
 
     hook_map = {}
     if on_event:
         hook_map = _parse_event_hooks(on_event)
         if not watch:
-            raise typer.BadParameter("--on requires --watch so hooks have events to monitor.", param_hint="--on")
+            raise typer.BadParameter(
+                "--on requires --watch so hooks have events to monitor.", param_hint="--on"
+            )
 
     settings = _resolve_settings(api_base)
 
     resume_manager: ResumeManager | None = None
     if resume:
         resolved_root = resume_root.resolve()
-        index_path = resume_index.resolve() if resume_index else (resolved_root / "work_index_list.csv.zst")
+        index_path = (
+            resume_index.resolve() if resume_index else (resolved_root / "work_index_list.csv.zst")
+        )
         done_dir = resume_done_dir.resolve() if resume_done_dir else (resolved_root / "done_flags")
         resume_manager = ResumeManager(resolved_root, index_path=index_path, done_dir=done_dir)
         done_count, total_entries = resume_manager.status()
         if total_entries is not None:
             percent = (done_count / total_entries * 100) if total_entries else 0.0
-            console.print(f"[dim]Resume progress[/]: {done_count}/{total_entries} entries ({percent:.1f}%).")
+            console.print(
+                f"[dim]Resume progress[/]: {done_count}/{total_entries} entries ({percent:.1f}%)."
+            )
         elif done_count:
             console.print(f"[dim]Resume progress[/]: {done_count} entries marked complete.")
         if resume_manager.is_complete(url):
@@ -1044,7 +1094,9 @@ def fetch(
             return
         if not watch:
             watch = True
-            console.print("[dim]Resume requires watching job completion; enabling --watch automatically.[/]")
+            console.print(
+                "[dim]Resume requires watching job completion; enabling --watch automatically.[/]"
+            )
 
     shared_client: httpx.Client | None = _client(settings, http2=http2) if reuse_session else None
     try:
@@ -1105,7 +1157,9 @@ def show(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     http2: bool = typer.Option(True, "--http2/--no-http2"),
-    ocr_metrics: bool = typer.Option(False, "--ocr-metrics/--no-ocr-metrics", help="Print OCR batch telemetry when available."),
+    ocr_metrics: bool = typer.Option(
+        False, "--ocr-metrics/--no-ocr-metrics", help="Print OCR batch telemetry when available."
+    ),
 ) -> None:
     """Display the latest snapshot for a real job."""
 
@@ -1115,12 +1169,16 @@ def show(
     if ocr_metrics:
         manifest = snapshot.get("manifest")
         if not manifest:
-            console.print("[yellow]Manifest not available yet; try again after the job completes.[/]")
+            console.print(
+                "[yellow]Manifest not available yet; try again after the job completes.[/]"
+            )
         else:
             _print_ocr_metrics(manifest, json_output=False)
 
 
-def _fetch_job_snapshot(job_id: str, settings: APISettings, *, http2: bool = True) -> dict[str, Any]:
+def _fetch_job_snapshot(
+    job_id: str, settings: APISettings, *, http2: bool = True
+) -> dict[str, Any]:
     with _client_ctx(settings, http2=http2) as client:
         response = client.get(f"/jobs/{job_id}")
         response.raise_for_status()
@@ -1131,7 +1189,9 @@ def _fetch_job_snapshot(job_id: str, settings: APISettings, *, http2: bool = Tru
 def stream(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    raw: bool = typer.Option(False, "--raw", help="Print raw event payloads instead of colored labels."),
+    raw: bool = typer.Option(
+        False, "--raw", help="Print raw event payloads instead of colored labels."
+    ),
 ) -> None:
     """Tail the live SSE stream for a job."""
 
@@ -1143,7 +1203,9 @@ def stream(
 def diag(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON payload instead of tables."),
+    json_output: bool = typer.Option(
+        False, "--json/--no-json", help="Emit JSON payload instead of tables."
+    ),
 ) -> None:
     """Print manifest/environment details for a job."""
 
@@ -1192,8 +1254,12 @@ def events(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     since: Optional[str] = typer.Option(None, help="ISO timestamp cursor for incremental polling."),
-    follow: bool = typer.Option(False, "--follow/--no-follow", help="Continue polling for new events."),
-    interval: float = typer.Option(2.0, "--interval", help="Polling interval in seconds when following."),
+    follow: bool = typer.Option(
+        False, "--follow/--no-follow", help="Continue polling for new events."
+    ),
+    interval: float = typer.Option(
+        2.0, "--interval", help="Polling interval in seconds when following."
+    ),
     output_path: str = typer.Option(
         "-", "--output", "-o", help="File to append NDJSON events to (default stdout)."
     ),
@@ -1203,7 +1269,9 @@ def events(
     settings = _resolve_settings(api_base)
     output, should_close = _open_output_stream(output_path)
     try:
-        _watch_job_events(job_id, settings, cursor=since, follow=follow, interval=interval, output=output)
+        _watch_job_events(
+            job_id, settings, cursor=since, follow=follow, interval=interval, output=output
+        )
     finally:
         if should_close:
             output.close()
@@ -1214,11 +1282,23 @@ def watch(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     since: Optional[str] = typer.Option(None, help="ISO timestamp cursor for incremental polling."),
-    follow: bool = typer.Option(True, "--follow/--once", help="Keep polling for new events instead of exiting."),
-    interval: float = typer.Option(2.0, "--interval", help="Polling interval in seconds when following."),
-    raw: bool = typer.Option(False, "--raw", help="Print raw NDJSON events instead of formatted output."),
-    progress_eta: bool = typer.Option(True, "--progress/--no-progress", help="Show percent/ETA while streaming events."),
-    reuse_session: bool = typer.Option(False, "--reuse-session/--no-reuse-session", help="Reuse a single HTTP client for the event stream."),
+    follow: bool = typer.Option(
+        True, "--follow/--once", help="Keep polling for new events instead of exiting."
+    ),
+    interval: float = typer.Option(
+        2.0, "--interval", help="Polling interval in seconds when following."
+    ),
+    raw: bool = typer.Option(
+        False, "--raw", help="Print raw NDJSON events instead of formatted output."
+    ),
+    progress_eta: bool = typer.Option(
+        True, "--progress/--no-progress", help="Show percent/ETA while streaming events."
+    ),
+    reuse_session: bool = typer.Option(
+        False,
+        "--reuse-session/--no-reuse-session",
+        help="Reuse a single HTTP client for the event stream.",
+    ),
     on_event: Optional[list[str]] = typer.Option(
         None,
         "--on",
@@ -1487,7 +1567,7 @@ def _print_warning_records(records: list[dict[str, Any]], *, json_output: bool) 
 
 
 def _warning_rows(
-    records: Iterable[dict[str, Any]]
+    records: Iterable[dict[str, Any]],
 ) -> Iterable[tuple[str, str, str, str, str, str, str, str]]:
     for record in records:
         timestamp = record.get("timestamp", "-")
@@ -1589,9 +1669,7 @@ def _format_dom_assist_summary(summary: Any) -> str:
     reasons = summary.get("reasons") or []
     reason_counts = summary.get("reason_counts") or []
     if isinstance(reason_counts, list) and reason_counts:
-        formatted_counts = ", ".join(
-            _format_reason_count(entry) for entry in reason_counts
-        )
+        formatted_counts = ", ".join(_format_reason_count(entry) for entry in reason_counts)
     elif reasons:
         formatted_counts = ", ".join(str(reason) for reason in reasons)
     else:
@@ -1616,7 +1694,7 @@ def _format_reason_count(entry: Mapping[str, Any]) -> str:
     ratio = entry.get("ratio")
     ratio_text = ""
     if isinstance(ratio, (int, float)):
-        ratio_text = f", {ratio*100:.1f}%"
+        ratio_text = f", {ratio * 100:.1f}%"
     return f"{reason}({count}{ratio_text})"
 
 
@@ -1671,7 +1749,9 @@ def _format_progress_text(progress: Any, *, meter: _ProgressMeter | None = None)
         base = f"{done} / {total}"
     extra = None
     if meter is not None:
-        extra = meter.describe(done if isinstance(done, int) else None, total if isinstance(total, int) else None)
+        extra = meter.describe(
+            done if isinstance(done, int) else None, total if isinstance(total, int) else None
+        )
     if extra:
         return f"{base} {extra}"
     return base
@@ -1701,7 +1781,10 @@ def _print_diag_report(
     if isinstance(env, dict):
         env_table = Table("Field", "Value", title="Environment")
         env_table.add_row("CfT", f"{env.get('cft_label', '—')} / {env.get('cft_version', '—')}")
-        env_table.add_row("Playwright", f"{env.get('playwright_channel', '—')} / {env.get('playwright_version', '—')}")
+        env_table.add_row(
+            "Playwright",
+            f"{env.get('playwright_channel', '—')} / {env.get('playwright_version', '—')}",
+        )
         env_table.add_row("Browser Transport", env.get("browser_transport", "—"))
         viewport = env.get("viewport") or {}
         env_table.add_row(
@@ -1892,7 +1975,9 @@ def _summarize_seam_data(entries: Any) -> tuple[dict[str, Any], list[dict[str, A
     if not markers:
         return ({}, [])
 
-    tile_ids = {entry.get("tile_index") for entry in markers if isinstance(entry.get("tile_index"), int)}
+    tile_ids = {
+        entry.get("tile_index") for entry in markers if isinstance(entry.get("tile_index"), int)
+    }
     hashes = {entry.get("hash") for entry in markers if entry.get("hash")}
     summary: dict[str, Any] = {
         "count": len(markers),
@@ -1942,8 +2027,16 @@ def _print_seam_markers(entries: Any) -> None:
     total = summary.get("count") if summary else len(rows)
     if total is None and rows:
         total = len(rows)
-    tile_count = summary.get("unique_tiles") if summary else len({row["tile"] for row in rows if row.get("tile")})
-    hash_count = summary.get("unique_hashes") if summary else len({row["hash"] for row in rows if row.get("hash")})
+    tile_count = (
+        summary.get("unique_tiles")
+        if summary
+        else len({row["tile"] for row in rows if row.get("tile")})
+    )
+    hash_count = (
+        summary.get("unique_hashes")
+        if summary
+        else len({row["hash"] for row in rows if row.get("hash")})
+    )
 
     table = Table("Metric", "Value", title="Seam Markers")
     table.add_row("Markers", str(total if total is not None else "—"))
@@ -1982,19 +2075,28 @@ def _print_seam_markers(entries: Any) -> None:
                 return position_order.get(value.lower(), 2)
             return 2
 
-        sorted_rows = sorted(rows, key=lambda row: (_tile_key(row), _position_key(row.get("position"))))
+        sorted_rows = sorted(
+            rows, key=lambda row: (_tile_key(row), _position_key(row.get("position")))
+        )
         detail = Table("Tile", "Position", "Hash")
         sample_count = min(len(sorted_rows), 10)
         for entry in sorted_rows[:sample_count]:
             tile_value = entry.get("tile", "—")
             position = entry.get("position", "—")
             seam_hash = entry.get("hash", "—")
-            detail.add_row(str(tile_value if tile_value is not None else "—"), str(position or "—"), str(seam_hash or "—"))
+            detail.add_row(
+                str(tile_value if tile_value is not None else "—"),
+                str(position or "—"),
+                str(seam_hash or "—"),
+            )
         if len(sorted_rows) > sample_count:
             detail.caption = f"Showing {sample_count} of {len(sorted_rows)} markers"
         console.print(detail)
     else:
-        _print_seam_marker_counts(summary.get("count") if summary else None, summary.get("unique_hashes") if summary else None)
+        _print_seam_marker_counts(
+            summary.get("count") if summary else None,
+            summary.get("unique_hashes") if summary else None,
+        )
 
 
 def _follow_warning_log(path: Path, *, json_output: bool, interval: float) -> None:
@@ -2056,7 +2158,9 @@ def _log_rotated_or_truncated(handle: TextIO, path: Path, last_inode: int | None
 @demo_cli.command("stream")
 def demo_stream(
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    raw: bool = typer.Option(False, "--raw", help="Print raw event payloads instead of colored labels."),
+    raw: bool = typer.Option(
+        False, "--raw", help="Print raw event payloads instead of colored labels."
+    ),
 ) -> None:
     """Tail the demo SSE stream."""
 
@@ -2081,9 +2185,15 @@ def demo_watch(api_base: Optional[str] = typer.Option(None, help="Override API b
 @warnings_cli.command("tail")
 def warnings_tail(
     count: int = typer.Option(20, "--count", "-n", help="Number of entries to display."),
-    follow: bool = typer.Option(False, "--follow/--no-follow", help="Stream new entries as they arrive."),
-    interval: float = typer.Option(1.0, "--interval", help="Polling interval in seconds when following."),
-    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON lines instead of a table."),
+    follow: bool = typer.Option(
+        False, "--follow/--no-follow", help="Stream new entries as they arrive."
+    ),
+    interval: float = typer.Option(
+        1.0, "--interval", help="Polling interval in seconds when following."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit raw JSON lines instead of a table."
+    ),
     log_path: Optional[Path] = typer.Option(None, "--log-path", help="Override WARNING_LOG_PATH."),
 ) -> None:
     """Tail the structured warning/blocklist log."""
@@ -2131,9 +2241,15 @@ cli.add_typer(dom_cli, name="dom")
 
 @dom_cli.command("links")
 def dom_links(
-    snapshot: Optional[Path] = typer.Argument(None, exists=True, dir_okay=False, help="Path to DOM snapshot HTML file."),
-    job_id: Optional[str] = typer.Option(None, "--job-id", help="Lookup DOM snapshot for an existing job."),
-    json_output: bool = typer.Option(False, "--json", help="Print raw JSON list instead of a table."),
+    snapshot: Optional[Path] = typer.Argument(
+        None, exists=True, dir_okay=False, help="Path to DOM snapshot HTML file."
+    ),
+    job_id: Optional[str] = typer.Option(
+        None, "--job-id", help="Lookup DOM snapshot for an existing job."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Print raw JSON list instead of a table."
+    ),
 ) -> None:
     """Extract links from a DOM snapshot using the ogf helper."""
 
@@ -2155,14 +2271,15 @@ def dom_links(
         console.print_json(data=data)
         return
     _print_links(data)
- 
 
 
 @jobs_webhooks_cli.command("list")
 def jobs_webhooks_list(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    json_output: bool = typer.Option(False, "--json", help="Emit structured JSON instead of a table."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit structured JSON instead of a table."
+    ),
 ) -> None:
     """List registered webhooks for a job."""
 
@@ -2191,7 +2308,9 @@ def jobs_webhooks_add(
         "-e",
         help="Job state to trigger the webhook (repeat flag for multiple states). Defaults to DONE+FAILED.",
     ),
-    json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON payload instead of text."),
+    json_output: bool = typer.Option(
+        False, "--json/--no-json", help="Emit JSON payload instead of text."
+    ),
 ) -> None:
     """Register a webhook for a job."""
 
@@ -2211,7 +2330,9 @@ def jobs_webhooks_add(
     if json_output:
         console.print_json(data={"status": "ok", **body})
         return
-    console.print(f"[green]Registered webhook for {job_id} ({url}).[/] Trigger states: {', '.join(event) if event else 'DONE, FAILED'}.")
+    console.print(
+        f"[green]Registered webhook for {job_id} ({url}).[/] Trigger states: {', '.join(event) if event else 'DONE, FAILED'}."
+    )
 
 
 @jobs_webhooks_cli.command("delete")
@@ -2220,7 +2341,9 @@ def jobs_webhooks_delete(
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     webhook_id: Optional[int] = typer.Option(None, "--id", help="Webhook record id"),
     url: Optional[str] = typer.Option(None, "--url", help="Webhook URL to delete"),
-    json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON payload instead of text."),
+    json_output: bool = typer.Option(
+        False, "--json/--no-json", help="Emit JSON payload instead of text."
+    ),
 ) -> None:
     """Remove a webhook subscription from a job."""
 
@@ -2363,15 +2486,21 @@ def jobs_replay_manifest(
         help="Path to manifest.json",
     ),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    http2: bool = typer.Option(True, "--http2/--no-http2", help="Use HTTP/2 for the replay request."),
-    json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON instead of text output."),
+    http2: bool = typer.Option(
+        True, "--http2/--no-http2", help="Use HTTP/2 for the replay request."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json/--no-json", help="Emit JSON instead of text output."
+    ),
 ) -> None:
     """Replay a capture manifest via POST /replay."""
 
     try:
         manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise typer.BadParameter(f"Manifest is not valid JSON ({exc})", param_hint="manifest_path") from exc
+        raise typer.BadParameter(
+            f"Manifest is not valid JSON ({exc})", param_hint="manifest_path"
+        ) from exc
 
     settings = _resolve_settings(api_base)
     with _client_ctx(settings, http2=http2) as client:
@@ -2411,7 +2540,9 @@ def jobs_embeddings_search(
     ),
     top_k: int = typer.Option(5, "--top-k", "-k", help="Number of sections to return."),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
-    json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON instead of a table."),
+    json_output: bool = typer.Option(
+        False, "--json/--no-json", help="Emit JSON instead of a table."
+    ),
 ) -> None:
     """Search section embeddings for a job."""
 

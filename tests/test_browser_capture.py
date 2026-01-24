@@ -12,7 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from app.capture import CaptureConfig, capture_tiles
-from app.settings import get_settings
 
 
 async def test_basic_capture():
@@ -34,7 +33,7 @@ async def test_basic_capture():
         # Run the capture
         result = await capture_tiles(config)
 
-        print(f"✅ Capture successful!")
+        print("✅ Capture successful!")
         print(f"   - Tiles captured: {len(result.tiles)}")
         print(f"   - User agent: {result.manifest.user_agent[:50]}...")
         print(f"   - Capture time: {result.manifest.capture_ms}ms")
@@ -60,6 +59,7 @@ async def test_basic_capture():
     except Exception as e:
         print(f"❌ Capture failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -70,7 +70,10 @@ async def test_pyvips_available():
 
     try:
         import pyvips
-        print(f"✅ pyvips is installed (version: {pyvips.version(0)}.{pyvips.version(1)}.{pyvips.version(2)})")
+
+        print(
+            f"✅ pyvips is installed (version: {pyvips.version(0)}.{pyvips.version(1)}.{pyvips.version(2)})"
+        )
         return True
     except (ImportError, OSError) as e:
         print(f"❌ pyvips not available: {e}")

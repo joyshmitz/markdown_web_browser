@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import logging
 import re
 from enum import Enum
 from pathlib import Path
@@ -22,6 +23,8 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 from app.tiler import TileSlice
 
+LOGGER = logging.getLogger(__name__)
+
 try:  # pragma: no cover - imported for typing/runtime parity
     from app.warning_log import summarize_seam_markers
 except ImportError:  # pragma: no cover - typing fallback
@@ -34,11 +37,12 @@ except ImportError:  # pragma: no cover - typing fallback
     ) -> dict[str, Any] | None:
         return None
 
-from .embeddings import EMBEDDING_DIM, EmbeddingMatch, search_embeddings
-from .settings import load_config
+
+from .embeddings import EMBEDDING_DIM, EmbeddingMatch, search_embeddings  # noqa: E402
+from .settings import load_config  # noqa: E402
 
 # Import models so they're registered with SQLModel.metadata
-from app.auth import APIKey  # noqa: F401 - imported for table registration
+from app.auth import APIKey  # noqa: E402, F401 - imported for table registration
 
 DEFAULT_JOB_STATE = "BROWSER_STARTING"
 
@@ -154,7 +158,9 @@ class RunPaths:
         timestamp = started_at.astimezone(timezone.utc).strftime(_TIMESTAMP_FORMAT)
         if cache_key:
             bucket, normalized_key = _cache_segments(cache_key)
-            run_root = config.cache_root / host / slug / "cache" / bucket / normalized_key / timestamp
+            run_root = (
+                config.cache_root / host / slug / "cache" / bucket / normalized_key / timestamp
+            )
         else:
             run_root = config.cache_root / host / slug / timestamp
         artifacts = run_root / "artifact"
@@ -270,7 +276,9 @@ class Store:
         profile_id: str | None = None,
         cache_key: str | None = None,
     ) -> RunPaths:
-        paths = RunPaths.from_url(url=url, started_at=started_at, config=self.config, cache_key=cache_key)
+        paths = RunPaths.from_url(
+            url=url, started_at=started_at, config=self.config, cache_key=cache_key
+        )
         paths.ensure_directories()
         record = RunRecord(
             id=job_id,
@@ -300,11 +308,11 @@ class Store:
                 .where(
                     RunRecord.cache_key == cache_key,
                     RunRecord.status == "DONE",
-                    RunRecord.finished_at.is_not(None),  # Explicit NULL check
+                    RunRecord.finished_at.is_not(None),  # type: ignore[union-attr]
                     # Only return cache hits within TTL window
-                    RunRecord.finished_at >= cutoff_time,
+                    RunRecord.finished_at >= cutoff_time,  # type: ignore[operator]
                 )
-                .order_by(desc(RunRecord.finished_at))
+                .order_by(desc(RunRecord.finished_at))  # type: ignore[arg-type]
             )
             for record in session.exec(statement):
                 try:
@@ -370,7 +378,11 @@ class Store:
             run = session.get(RunRecord, job_id)
             if not run:
                 raise KeyError(f"Run {job_id} not found")
-            statement = select(WebhookRecord).where(WebhookRecord.job_id == job_id).order_by(WebhookRecord.created_at)
+            statement = (
+                select(WebhookRecord)
+                .where(WebhookRecord.job_id == job_id)
+                .order_by(WebhookRecord.created_at)  # type: ignore[arg-type]
+            )
             return list(session.exec(statement).all())
 
     def delete_webhooks(
@@ -506,7 +518,9 @@ class Store:
         self._write_artifacts_manifest(paths, artifacts)
         return artifacts
 
-    def _write_artifacts_manifest(self, paths: RunPaths, artifacts: Sequence[Mapping[str, Any]]) -> None:
+    def _write_artifacts_manifest(
+        self, paths: RunPaths, artifacts: Sequence[Mapping[str, Any]]
+    ) -> None:
         payload = [dict(item) for item in artifacts]
         paths.artifacts_manifest_path.parent.mkdir(parents=True, exist_ok=True)
         paths.artifacts_manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -655,7 +669,9 @@ class Store:
         top_k: int,
     ) -> tuple[int, list[EmbeddingMatch]]:
         with self.session() as session:
-            return search_embeddings(session=session, run_id=job_id, query_vector=vector, top_k=top_k)
+            return search_embeddings(
+                session=session, run_id=job_id, query_vector=vector, top_k=top_k
+            )
 
 
 def build_store(config: StorageConfig | None = None) -> Store:
@@ -696,12 +712,12 @@ def _create_engine(db_path: Path):
     )
 
     @event.listens_for(engine, "connect")
-    def _on_connect(dbapi_connection, connection_record) -> None:  # type: ignore[override]
+    def _on_connect(dbapi_connection, connection_record) -> None:
         dbapi_connection.enable_load_extension(True)
         sqlite_vec.load(dbapi_connection)
         # Enable WAL mode for concurrent read/write operations
         result = dbapi_connection.execute("PRAGMA journal_mode=WAL").fetchone()
-        if result and result[0].lower() != 'wal':
+        if result and result[0].lower() != "wal":
             LOGGER.warning("Failed to enable WAL mode, got: %s", result[0])
         # Set busy timeout to 30 seconds
         dbapi_connection.execute("PRAGMA busy_timeout=30000").fetchone()
@@ -805,7 +821,7 @@ def _manifest_to_dict(manifest: Mapping[str, object] | Any) -> dict[str, Any]:
     if isinstance(manifest, Mapping):
         return dict(manifest)
     if hasattr(manifest, "model_dump"):
-        return manifest.model_dump()  # type: ignore[no-any-return]
+        return manifest.model_dump()
     if is_dataclass(manifest):
         return asdict(manifest)
     return {}

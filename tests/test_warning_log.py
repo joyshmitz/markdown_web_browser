@@ -37,7 +37,9 @@ def _demo_manifest(with_warning: bool = True, with_hits: bool = False) -> Manife
         playwright_channel="cft",
         playwright_version="1.55.0",
         browser_transport="cdp",
-        viewport=ViewportSettings(width=1280, height=2000, device_scale_factor=2, color_scheme="light"),
+        viewport=ViewportSettings(
+            width=1280, height=2000, device_scale_factor=2, color_scheme="light"
+        ),
         viewport_overlap_px=120,
         tile_overlap_px=120,
         scroll_settle_ms=350,
@@ -76,12 +78,18 @@ def test_append_warning_log_skips_when_empty(monkeypatch, tmp_path):
 
     monkeypatch.setattr("app.warning_log.get_settings", lambda: _settings_with_log(log_path))
 
-    append_warning_log(job_id="run-2", url="https://example.com", manifest=_demo_manifest(with_warning=False, with_hits=False))
+    append_warning_log(
+        job_id="run-2",
+        url="https://example.com",
+        manifest=_demo_manifest(with_warning=False, with_hits=False),
+    )
 
     assert not log_path.exists()
 
 
-def test_append_warning_log_records_validation_failures_without_other_warnings(monkeypatch, tmp_path):
+def test_append_warning_log_records_validation_failures_without_other_warnings(
+    monkeypatch, tmp_path
+):
     log_path = tmp_path / "warnings.jsonl"
     monkeypatch.setattr("app.warning_log.get_settings", lambda: _settings_with_log(log_path))
 

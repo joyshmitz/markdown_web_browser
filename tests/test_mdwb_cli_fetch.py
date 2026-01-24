@@ -155,7 +155,9 @@ def test_fetch_cache_flag(monkeypatch):
 
 
 def test_fetch_resume_skips_completed_url(monkeypatch, tmp_path):
-    _write_resume_state(tmp_path, mdwb_cli._resume_hash("https://example.com"), ["https://example.com"])
+    _write_resume_state(
+        tmp_path, mdwb_cli._resume_hash("https://example.com"), ["https://example.com"]
+    )
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     @contextmanager
@@ -181,7 +183,9 @@ def test_fetch_resume_skips_completed_url(monkeypatch, tmp_path):
 
 
 def test_fetch_resume_submits_new_url(monkeypatch, tmp_path):
-    _write_resume_state(tmp_path, mdwb_cli._resume_hash("https://done.example"), ["https://done.example"])
+    _write_resume_state(
+        tmp_path, mdwb_cli._resume_hash("https://done.example"), ["https://done.example"]
+    )
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     calls: list[tuple[str, dict]] = []
@@ -202,6 +206,7 @@ def test_fetch_resume_submits_new_url(monkeypatch, tmp_path):
         yield FakeClient()
 
     monkeypatch.setattr(mdwb_cli, "_client_ctx", _client_ctx)
+
     def _fake_watch(*_args, **kwargs):
         cb = kwargs.get("on_terminal")
         if cb:
@@ -304,7 +309,18 @@ def test_fetch_watch_passes_event_hooks(monkeypatch):
 
     captured: dict[str, Any] = {}
 
-    def fake_watch(job_id, settings, cursor, follow, interval, raw, hooks, on_terminal=None, progress_meter=None, client=None):  # noqa: ANN001,E501
+    def fake_watch(
+        job_id,
+        settings,
+        cursor,
+        follow,
+        interval,
+        raw,
+        hooks,
+        on_terminal=None,
+        progress_meter=None,
+        client=None,
+    ):  # noqa: ANN001,E501
         captured.update(
             {
                 "job_id": job_id,
@@ -359,7 +375,9 @@ def test_fetch_reuse_session_reuses_http_client(monkeypatch):
     def fake_watch(*, client=None, **_):  # noqa: ANN001
         watch_calls["client"] = client
 
-    monkeypatch.setattr(mdwb_cli, "_watch_events_with_fallback", lambda *args, **kwargs: fake_watch(**kwargs))
+    monkeypatch.setattr(
+        mdwb_cli, "_watch_events_with_fallback", lambda *args, **kwargs: fake_watch(**kwargs)
+    )
 
     result = runner.invoke(
         mdwb_cli.cli,

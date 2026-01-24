@@ -171,7 +171,11 @@ def load_config(env_path: str = ".env") -> DecoupleConfig:
 
     target = Path(env_path)
     if not target.exists():
-        fallback = target.with_suffix(target.suffix + ".example") if target.suffix else Path(f"{env_path}.example")
+        fallback = (
+            target.with_suffix(target.suffix + ".example")
+            if target.suffix
+            else Path(f"{env_path}.example")
+        )
         if fallback.exists():
             LOGGER.warning("%s missing; falling back to %s", env_path, fallback)
             target = fallback

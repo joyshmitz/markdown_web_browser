@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, List, Optional, TYPE_CHECKING
 
 try:  # pragma: no cover - exercised indirectly via helper
-    import pyvips as _pyvips  # type: ignore[import-not-found]
+    import pyvips as _pyvips
 except Exception as exc:  # pragma: no cover - missing native dependency
     _PYVIPS = None
     _PYVIPS_IMPORT_ERROR = exc

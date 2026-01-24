@@ -9,4 +9,3 @@ HTTP clients, or polling logic.
 from __future__ import annotations
 
 __all__ = ["shared"]
-

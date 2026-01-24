@@ -46,7 +46,9 @@ class StubResponse:
 
 
 def _fake_settings():
-    return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def _patch_client_ctx(monkeypatch, stub):
@@ -64,10 +66,14 @@ def test_jobs_manifest_writes_pretty_json(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
     out_path = tmp_path / "manifest.json"
 
-    result = runner.invoke(mdwb_cli.cli, ["jobs", "artifacts", "manifest", "job123", "--out", str(out_path)])
+    result = runner.invoke(
+        mdwb_cli.cli, ["jobs", "artifacts", "manifest", "job123", "--out", str(out_path)]
+    )
 
     assert result.exit_code == 0
-    assert out_path.read_text().strip() == mdwb_cli.json.dumps({"cft_version": "chrome-130"}, indent=2)
+    assert out_path.read_text().strip() == mdwb_cli.json.dumps(
+        {"cft_version": "chrome-130"}, indent=2
+    )
 
 
 def test_jobs_markdown_prints_to_stdout(monkeypatch):

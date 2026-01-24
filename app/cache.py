@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.schemas import CaptureConfig
+from app.capture import CaptureConfig
 
 
 def compute_cache_key(
@@ -122,8 +121,8 @@ def compute_cache_key_from_config(config: CaptureConfig, settings: Any) -> str:
         tile_overlap_px=settings.browser.tile_overlap_px,
         scroll_settle_ms=settings.browser.scroll_settle_ms,
         screenshot_style_hash=settings.browser.screenshot_style_hash,
-        mask_selectors=config.mask_selectors or [],
-        blocklist_selectors=config.blocklist_selectors or [],
+        mask_selectors=settings.browser.screenshot_mask_selectors or (),
+        blocklist_selectors=(),  # Currently not configurable; always empty
         ocr_model=settings.ocr.model,
         ocr_use_fp8=settings.ocr.use_fp8,
     )

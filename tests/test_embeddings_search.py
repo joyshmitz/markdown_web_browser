@@ -29,7 +29,9 @@ def _vector(primary: float) -> list[float]:
 def test_store_embedding_search_ranks_best_match(tmp_path):
     config = StorageConfig(cache_root=tmp_path / "cache", db_path=tmp_path / "runs.db")
     store = Store(config)
-    store.allocate_run(job_id="run-1", url="https://example.com", started_at=datetime.now(timezone.utc))
+    store.allocate_run(
+        job_id="run-1", url="https://example.com", started_at=datetime.now(timezone.utc)
+    )
 
     with store.session() as session:
         upsert_embeddings(
@@ -37,7 +39,9 @@ def test_store_embedding_search_ranks_best_match(tmp_path):
             run_id="run-1",
             sections=[
                 SectionEmbedding(section_id="intro", tile_start=0, tile_end=2, vector=_vector(0.9)),
-                SectionEmbedding(section_id="details", tile_start=3, tile_end=5, vector=_vector(0.1)),
+                SectionEmbedding(
+                    section_id="details", tile_start=3, tile_end=5, vector=_vector(0.1)
+                ),
             ],
         )
 

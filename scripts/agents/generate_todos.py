@@ -32,7 +32,11 @@ def todos(
     http2: bool = typer.Option(True, "--http2/--no-http2"),
     poll_interval: float = typer.Option(2.0, help="Seconds between polling /jobs/{id}."),
     timeout: float = typer.Option(300.0, help="Maximum seconds to wait for completion."),
-    reuse_session: bool = typer.Option(True, "--reuse-session/--no-reuse-session", help="Reuse the same HTTP client across submit/poll/fetch."),
+    reuse_session: bool = typer.Option(
+        True,
+        "--reuse-session/--no-reuse-session",
+        help="Reuse the same HTTP client across submit/poll/fetch.",
+    ),
     out: Path | None = typer.Option(
         None,
         "--out",

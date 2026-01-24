@@ -2,7 +2,7 @@
 """Test different PNG encoding methods with pyvips to find the issue."""
 
 import pyvips
-import sys
+
 
 def test_png_formats():
     """Test various PNG encoding formats."""
@@ -38,11 +38,12 @@ def test_png_formats():
     try:
         # List available foreign save operations
         import subprocess
+
         result = subprocess.run(["vips", "--list", "classes"], capture_output=True, text=True)
-        png_savers = [line for line in result.stdout.split('\n') if 'png' in line.lower()]
+        png_savers = [line for line in result.stdout.split("\n") if "png" in line.lower()]
         for saver in png_savers[:5]:
             print(f"  - {saver.strip()}")
-    except:
+    except Exception:  # noqa: BLE001
         pass
 
     # Test 5: Test with spng if available
@@ -58,9 +59,12 @@ def test_png_formats():
         png_bytes = image.pngsave_buffer(compression=9, interlace=False)
         reloaded = pyvips.Image.new_from_buffer(png_bytes, "")
         re_encoded = reloaded.pngsave_buffer(compression=9, interlace=False)
-        print(f"✅ Round-trip PNG encoding works - original: {len(png_bytes)}, re-encoded: {len(re_encoded)}")
+        print(
+            f"✅ Round-trip PNG encoding works - original: {len(png_bytes)}, re-encoded: {len(re_encoded)}"
+        )
     except Exception as e:
         print(f"❌ Round-trip failed: {e}")
+
 
 if __name__ == "__main__":
     test_png_formats()

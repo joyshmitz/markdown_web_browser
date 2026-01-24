@@ -35,7 +35,9 @@ class StubResponse:
 
 
 def _fake_settings():
-    return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def test_jobs_ocr_metrics_prints_table(monkeypatch):
@@ -84,8 +86,8 @@ def test_jobs_ocr_metrics_json_output(monkeypatch):
     result = runner.invoke(mdwb_cli.cli, ["jobs", "ocr-metrics", "job", "--json"])
 
     assert result.exit_code == 0
-    assert "\"batches\": []" in result.output
-    assert "\"seam_markers\"" in result.output
+    assert '"batches": []' in result.output
+    assert '"seam_markers"' in result.output
 
 
 def test_jobs_ocr_metrics_errors_when_manifest_missing(monkeypatch):
@@ -115,7 +117,9 @@ def test_show_command_prints_ocr_metrics(monkeypatch):
         "seam_markers": [{"tile_index": 5, "position": "bottom", "hash": "tail55"}],
     }
     snapshot = {"id": "job", "manifest": manifest}
-    monkeypatch.setattr(mdwb_cli, "_fetch_job_snapshot", lambda job_id, settings, http2=True: snapshot)
+    monkeypatch.setattr(
+        mdwb_cli, "_fetch_job_snapshot", lambda job_id, settings, http2=True: snapshot
+    )
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
     result = runner.invoke(mdwb_cli.cli, ["show", "job", "--ocr-metrics"])

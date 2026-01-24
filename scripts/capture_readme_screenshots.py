@@ -30,7 +30,7 @@ async def capture_screenshots():
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--window-size=1920,1080",
-            ]
+            ],
         )
 
         context = await browser.new_context(
@@ -86,12 +86,12 @@ async def capture_screenshots():
         # 2. Load the browser UI
         await page.goto("http://localhost:8000/browser", wait_until="load", timeout=30000)
         print("   Browser UI loaded")
-        
+
         # 3. Enter the URL in the input field and press Enter
         print("   Entering finviz.com URL and pressing Enter...")
         await page.fill("#url-input", "https://finviz.com")
         await page.press("#url-input", "Enter")
-        
+
         # 4. Wait for the welcome message to be REPLACED with actual content
         print("   Waiting for finviz content to load (this may take 30-60 seconds)...")
         try:
@@ -105,19 +105,19 @@ async def capture_screenshots():
                     const hasFinviz = text.includes('Finviz') || text.includes('DOW') || text.includes('NASDAQ') || text.includes('S&P 500');
                     return !hasWelcome && hasFinviz;
                 }""",
-                timeout=180000  # 3 minutes for finviz to be captured and processed
+                timeout=180000,  # 3 minutes for finviz to be captured and processed
             )
             print("   ✓ Content loaded successfully - finviz data detected!")
         except Exception as e:
             print(f"   ⚠️  Warning: Timeout waiting for content: {e}")
-            
+
             # Debug: Check what's actually in the content
             content_text = await page.evaluate("""() => {
                 const content = document.querySelector('#rendered-content');
                 return content ? content.textContent.substring(0, 300) : 'NO CONTENT';
             }""")
             print(f"   Content preview: {content_text[:150]}...")
-        
+
         # Extra wait to ensure rendering is complete
         await page.wait_for_timeout(2000)
 
@@ -130,7 +130,7 @@ async def capture_screenshots():
         try:
             await page.click("#raw-btn", force=True)
             await page.wait_for_timeout(1500)
-            
+
             # Wait for raw content to be visible and have content
             await page.wait_for_function(
                 """() => {
@@ -146,7 +146,7 @@ async def capture_screenshots():
                     
                     return isActive && hasContent;
                 }""",
-                timeout=5000
+                timeout=5000,
             )
             print("   ✓ Switched to raw view successfully")
         except Exception as e:

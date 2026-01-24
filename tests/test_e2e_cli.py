@@ -21,7 +21,9 @@ RICH_E2E_ARTIFACT_DIR = os.environ.get("RICH_E2E_ARTIFACT_DIR")
 
 
 class DummyResponse:
-    def __init__(self, status_code: int, payload: dict[str, Any] | None = None, text: str = "") -> None:
+    def __init__(
+        self, status_code: int, payload: dict[str, Any] | None = None, text: str = ""
+    ) -> None:
         self.status_code = status_code
         self._payload = payload or {}
         self.text = text
@@ -34,7 +36,9 @@ class DummyResponse:
             raise RuntimeError(self.text or f"status {self.status_code}")
 
 
-def _export_transcripts(console: Console, artifact_root: Path, stem: str = "rich_e2e_cli") -> tuple[Path, Path]:
+def _export_transcripts(
+    console: Console, artifact_root: Path, stem: str = "rich_e2e_cli"
+) -> tuple[Path, Path]:
     artifact_root.mkdir(parents=True, exist_ok=True)
     log_path = artifact_root / f"{stem}.log"
     html_path = artifact_root / f"{stem}.html"
@@ -60,7 +64,9 @@ def _resume_hash(identifier: str) -> str:
 
 
 def _capture_result(markdown: str) -> agent_shared.CaptureResult:
-    return agent_shared.CaptureResult(job_id="demo-job", snapshot={"state": "DONE"}, markdown=markdown)
+    return agent_shared.CaptureResult(
+        job_id="demo-job", snapshot={"state": "DONE"}, markdown=markdown
+    )
 
 
 def test_e2e_fetch_resume_with_webhooks_rich_logging(monkeypatch, tmp_path: Path) -> None:
@@ -68,7 +74,9 @@ def test_e2e_fetch_resume_with_webhooks_rich_logging(monkeypatch, tmp_path: Path
     resume_root = tmp_path / "resume"
     done_dir = resume_root / "done_flags"
     done_dir.mkdir(parents=True)
-    (done_dir / f"done_{_resume_hash('https://other.example')}.flag").write_text("", encoding="utf-8")
+    (done_dir / f"done_{_resume_hash('https://other.example')}.flag").write_text(
+        "", encoding="utf-8"
+    )
 
     console = _setup_console(monkeypatch, [mdwb_cli])
     logger = FlowLogger(console, "mdwb fetch --resume --webhook")
@@ -91,7 +99,9 @@ def test_e2e_fetch_resume_with_webhooks_rich_logging(monkeypatch, tmp_path: Path
             payload = json or {}
             call_log.append({"path": path, "payload": payload})
             if path == "/jobs":
-                return DummyResponse(200, {"id": "job-rich", "manifest_path": "/jobs/job-rich/manifest.json"})
+                return DummyResponse(
+                    200, {"id": "job-rich", "manifest_path": "/jobs/job-rich/manifest.json"}
+                )
             if path == "/jobs/job-rich/webhooks":
                 return DummyResponse(200, {"status": "ok"})
             raise AssertionError(f"Unexpected path {path}")
@@ -232,7 +242,11 @@ def test_e2e_fetch_resume_logs_with_rich(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(mdwb_cli.ResumeManager, "status", tracking_status)
     monkeypatch.setattr(mdwb_cli.ResumeManager, "is_complete", tracking_is_complete)
-    monkeypatch.setattr(mdwb_cli, "_watch_events_with_fallback", lambda *args, **kwargs: function_calls.append("_watch_events_with_fallback"))
+    monkeypatch.setattr(
+        mdwb_cli,
+        "_watch_events_with_fallback",
+        lambda *args, **kwargs: function_calls.append("_watch_events_with_fallback"),
+    )
 
     command = f"mdwb fetch {url} --resume --resume-root {resume_root}"
     logger.step(
@@ -311,7 +325,10 @@ def test_e2e_agents_summarize_with_rich_logging(monkeypatch, tmp_path: Path) -> 
         description="Captured Markdown + generated summary for downstream agents.",
         functions=["shared.capture_markdown", "shared.summarize_markdown"],
         outputs={
-            "sentences": (called["summarize_markdown"]["sentences"], "agent_shared.summarize_markdown"),
+            "sentences": (
+                called["summarize_markdown"]["sentences"],
+                "agent_shared.summarize_markdown",
+            ),
             "markdown_lines": (
                 len(called["summarize_markdown"]["markdown"].splitlines()),
                 "agent_shared.capture_markdown",
@@ -428,7 +445,12 @@ def test_e2e_warning_tail_and_diag_with_rich_logging(monkeypatch, tmp_path: Path
         "warnings": [
             {"code": "canvas-heavy", "message": "Many canvas elements", "count": 4, "threshold": 3},
         ],
-        "sweep_stats": {"shrink_events": 1, "retry_attempts": 0, "overlap_pairs": 3, "overlap_match_ratio": 0.82},
+        "sweep_stats": {
+            "shrink_events": 1,
+            "retry_attempts": 0,
+            "overlap_pairs": 3,
+            "overlap_match_ratio": 0.82,
+        },
         "validation_failures": ["Tile checksum mismatch"],
         "blocklist_hits": {"#banner": 2},
     }
@@ -469,7 +491,10 @@ def test_e2e_warning_tail_and_diag_with_rich_logging(monkeypatch, tmp_path: Path
         description="Verify that canvas-heavy warnings and validation details are surfaced.",
         outputs={
             "exit_code": (result.exit_code, "warnings tail"),
-            "warning_codes": ([w["code"] for w in warning_payload.get("warnings", [])], "warnings tail"),
+            "warning_codes": (
+                [w["code"] for w in warning_payload.get("warnings", [])],
+                "warnings tail",
+            ),
         },
         syntax_blocks=[("json", result.output)],
     )
@@ -535,7 +560,10 @@ def test_e2e_warning_tail_and_diag_with_rich_logging(monkeypatch, tmp_path: Path
         description="Log manifest diagnostics with overlap + warning metrics.",
         outputs={
             "manifest_source": (diag_payload.get("manifest_source"), "mdwb diag"),
-            "warning_count": (len(diag_payload.get("manifest", {}).get("warnings", [])), "mdwb diag"),
+            "warning_count": (
+                len(diag_payload.get("manifest", {}).get("warnings", [])),
+                "mdwb diag",
+            ),
             "blocklist_hits": (diag_payload.get("manifest", {}).get("blocklist_hits"), "mdwb diag"),
         },
         syntax_blocks=[("json", diag_result.output)],

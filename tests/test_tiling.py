@@ -7,7 +7,7 @@ import hashlib
 import pytest
 
 try:  # pragma: no cover - exercised only when libvips missing
-    import pyvips as _pyvips  # type: ignore
+    import pyvips as _pyvips
 except Exception as exc:  # noqa: BLE001
     pytest.skip(f"pyvips unavailable: {exc}", allow_module_level=True)
 else:

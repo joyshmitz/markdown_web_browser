@@ -227,7 +227,9 @@ async def _perform_viewport_sweeps(
     await page.goto(config.url, wait_until="domcontentloaded", timeout=30000)
     blocklist_hits = await apply_blocklist(page, url=config.url, config=blocklist_config)
     await _ensure_watermark_injected(page)
-    warning_entries: list[CaptureWarningEntry] = await collect_capture_warnings(page, warning_settings)
+    warning_entries: list[CaptureWarningEntry] = await collect_capture_warnings(
+        page, warning_settings
+    )
     await page.evaluate("window.scrollTo(0, 0)")
     await page.wait_for_timeout(settle_ms)
     sweep_count = 0
@@ -486,7 +488,7 @@ async def _launch_browser(playwright, channel: str) -> Browser:
     return await playwright.chromium.launch(
         channel=normalized,
         headless=True,  # Keep this True, the --headless=new arg is what matters
-        args=launch_args
+        args=launch_args,
     )
 
 

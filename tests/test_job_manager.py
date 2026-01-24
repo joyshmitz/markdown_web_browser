@@ -28,6 +28,7 @@ try:
         SweepStats,
     )
 except OSError:  # pyvips missing in CI
+
     @dataclass
     class ScrollPolicy:  # type: ignore[override]
         settle_ms: int
@@ -80,6 +81,7 @@ except OSError:  # pyvips missing in CI
     class CaptureResult:  # type: ignore[override]
         tiles: list
         manifest: CaptureManifest
+
 
 import app.jobs as jobs_module  # noqa: E402
 from app.jobs import JobManager, JobState  # noqa: E402
@@ -349,7 +351,9 @@ async def test_job_manager_reuses_cache(tmp_path: Path):
     config = StorageConfig(cache_root=tmp_path / "cache", db_path=tmp_path / "runs.db")
     manager = JobManager(store=Store(config), runner=_fake_runner)
 
-    first = await manager.create_job(JobCreateRequest(url="https://example.com/cache", reuse_cache=False))
+    first = await manager.create_job(
+        JobCreateRequest(url="https://example.com/cache", reuse_cache=False)
+    )
     await manager._tasks[first["id"]]
     source_record = manager.store.fetch_run(first["id"])
     assert source_record is not None
@@ -399,7 +403,9 @@ async def test_job_manager_webhook_delivery(tmp_path: Path):
     snapshot = await manager.create_job(JobCreateRequest(url="https://example.com/hook"))
     job_id = snapshot["id"]
 
-    manager.register_webhook(job_id, url="https://example.com/webhook", events=[JobState.DONE.value])
+    manager.register_webhook(
+        job_id, url="https://example.com/webhook", events=[JobState.DONE.value]
+    )
     await manager._tasks[job_id]
     await asyncio.sleep(0)
 
@@ -485,7 +491,9 @@ async def test_delete_webhook_requires_both_identifiers(tmp_path: Path):
     webhook_id = records[0].id
     assert webhook_id is not None
 
-    deleted = manager.delete_webhook(job_id, webhook_id=webhook_id + 1, url="https://example.com/hook")
+    deleted = manager.delete_webhook(
+        job_id, webhook_id=webhook_id + 1, url="https://example.com/hook"
+    )
 
     assert deleted == 0
     # Store still has the record because the ID mismatch prevented deletion.
@@ -494,7 +502,9 @@ async def test_delete_webhook_requires_both_identifiers(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_cache_key_changes_when_cft_version_differs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_cache_key_changes_when_cft_version_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Changing the CfT build should invalidate the cache key."""
 
     config = StorageConfig(cache_root=tmp_path / "cache", db_path=tmp_path / "runs.db")
@@ -518,7 +528,9 @@ async def test_cache_key_changes_when_cft_version_differs(tmp_path: Path, monkey
 
 
 @pytest.mark.asyncio
-async def test_cache_key_changes_when_ocr_model_differs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_cache_key_changes_when_ocr_model_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Switching OCR models must produce a distinct cache key."""
 
     config = StorageConfig(cache_root=tmp_path / "cache", db_path=tmp_path / "runs.db")
@@ -545,7 +557,9 @@ class _DeleteStubStore:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int | None, str | None]] = []
 
-    def delete_webhooks(self, *, job_id: str, webhook_id: int | None = None, url: str | None = None) -> int:
+    def delete_webhooks(
+        self, *, job_id: str, webhook_id: int | None = None, url: str | None = None
+    ) -> int:
         self.calls.append((job_id, webhook_id, url))
         raise KeyError("Run not allocated yet")
 
@@ -554,7 +568,11 @@ def test_delete_webhook_handles_pending_entries():
     store = _DeleteStubStore()
     manager = JobManager(store=cast(Store, store), runner=_fake_runner)
     job_id = "pending-job"
-    manager._snapshots[job_id] = {"id": job_id, "url": "https://example.com", "state": JobState.CAPTURING}
+    manager._snapshots[job_id] = {
+        "id": job_id,
+        "url": "https://example.com",
+        "state": JobState.CAPTURING,
+    }
     manager._webhooks[job_id] = [{"url": "https://example.com/hook"}]
     manager._pending_webhooks[job_id] = [{"url": "https://example.com/hook"}]
 

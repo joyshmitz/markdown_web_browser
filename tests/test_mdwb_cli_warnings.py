@@ -60,7 +60,7 @@ def test_warnings_tail_json_includes_enriched_fields(tmp_path: Path, monkeypatch
     )
 
     assert result.exit_code == 0
-    assert "\"validation_failure_count\"" in result.output
+    assert '"validation_failure_count"' in result.output
     assert "sweep_summary" in result.output
     assert "dom_assist_summary" in result.output
     assert "assist_density" in result.output
@@ -73,11 +73,14 @@ def test_warnings_tail_pretty_output(tmp_path: Path, monkeypatch) -> None:
     record = {
         "timestamp": "2025-11-08T08:00:00Z",
         "job_id": "run-2",
-        "warnings": [
-            {"code": "canvas-heavy", "count": 5, "threshold": 3, "message": "canvas"}
-        ],
+        "warnings": [{"code": "canvas-heavy", "count": 5, "threshold": 3, "message": "canvas"}],
         "blocklist_hits": {"#cookie": 1},
-        "sweep_stats": {"shrink_events": 0, "retry_attempts": 0, "overlap_pairs": 2, "overlap_match_ratio": 0.95},
+        "sweep_stats": {
+            "shrink_events": 0,
+            "retry_attempts": 0,
+            "overlap_pairs": 2,
+            "overlap_match_ratio": 0.95,
+        },
         "validation_failures": [],
         "seam_markers": {
             "count": 1,

@@ -39,7 +39,9 @@ class StubClient:
 
 
 def _fake_settings():
-    return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def _patch_client_ctx(monkeypatch, responses: dict[str, StubResponse]) -> None:
@@ -67,7 +69,13 @@ def test_jobs_show_prints_sweep_and_validation_summary(monkeypatch):
         "overlap_match_ratio": 0.82,
         "validation_failures": ["tile checksum mismatch"],
     }
-    snapshot = {"id": "job123", "state": "DONE", "url": "https://example.com", "progress": {"done": 5, "total": 5}, "manifest": manifest}
+    snapshot = {
+        "id": "job123",
+        "state": "DONE",
+        "url": "https://example.com",
+        "progress": {"done": 5, "total": 5},
+        "manifest": manifest,
+    }
     responses = {"/jobs/job123": StubResponse(snapshot)}
 
     _patch_client_ctx(monkeypatch, responses)

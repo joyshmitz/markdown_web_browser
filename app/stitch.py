@@ -129,7 +129,9 @@ def stitch_markdown(
 
     # Get deduplication settings
     settings = get_settings()
-    dedup_enabled = deduplicate_overlaps if deduplicate_overlaps is not None else settings.deduplication.enabled
+    dedup_enabled = (
+        deduplicate_overlaps if deduplicate_overlaps is not None else settings.deduplication.enabled
+    )
 
     processed: list[str] = []
     last_heading_level = 0
@@ -178,7 +180,9 @@ def stitch_markdown(
         )
 
         if overlay_index:
-            lines, assists = _apply_dom_overlays(lines, overlay_index, tile_index=tile.index if tile else idx)
+            lines, assists = _apply_dom_overlays(
+                lines, overlay_index, tile_index=tile.index if tile else idx
+            )
             if assists:
                 dom_assists.extend(assists)
                 for assist in assists:
@@ -490,7 +494,12 @@ def _merge_overlay(line: str, dom_text: str) -> str:
 
 
 def _extract_markdown_prefix(line: str) -> str:
-    for pattern in (_HEADING_PREFIX_RE, _ORDERED_LIST_PREFIX_RE, _UNORDERED_LIST_PREFIX_RE, _BLOCKQUOTE_PREFIX_RE):
+    for pattern in (
+        _HEADING_PREFIX_RE,
+        _ORDERED_LIST_PREFIX_RE,
+        _UNORDERED_LIST_PREFIX_RE,
+        _BLOCKQUOTE_PREFIX_RE,
+    ):
         match = pattern.match(line)
         if match:
             return match.group(0)

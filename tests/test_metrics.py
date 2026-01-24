@@ -22,7 +22,9 @@ def _base_environment() -> ManifestEnvironment:
         playwright_channel="cft",
         playwright_version="1.50.0",
         browser_transport="cdp",
-        viewport=ViewportSettings(width=1280, height=2000, device_scale_factor=2, color_scheme="light"),
+        viewport=ViewportSettings(
+            width=1280, height=2000, device_scale_factor=2, color_scheme="light"
+        ),
         viewport_overlap_px=120,
         tile_overlap_px=120,
         scroll_settle_ms=350,
@@ -87,9 +89,7 @@ def test_observe_manifest_metrics_updates_histograms_and_counters() -> None:
         labels={"selector": "#cookie-banner"},
     )
 
-    before_density_sum = _sample_value(
-        metrics.DOM_ASSIST_DENSITY, "mdwb_dom_assist_density_sum"
-    )
+    before_density_sum = _sample_value(metrics.DOM_ASSIST_DENSITY, "mdwb_dom_assist_density_sum")
     before_reason_low_alpha = _sample_value(
         metrics.DOM_ASSIST_REASON_RATIO,
         "mdwb_dom_assist_reason_ratio_sum",
@@ -126,9 +126,7 @@ def test_observe_manifest_metrics_updates_histograms_and_counters() -> None:
     assert after_canvas == pytest.approx(before_canvas + 3)
     assert after_shrink == pytest.approx(before_shrink + 1)
     assert after_blocklist == pytest.approx(before_blocklist + 2)
-    after_density_sum = _sample_value(
-        metrics.DOM_ASSIST_DENSITY, "mdwb_dom_assist_density_sum"
-    )
+    after_density_sum = _sample_value(metrics.DOM_ASSIST_DENSITY, "mdwb_dom_assist_density_sum")
     after_reason_low_alpha = _sample_value(
         metrics.DOM_ASSIST_REASON_RATIO,
         "mdwb_dom_assist_reason_ratio_sum",

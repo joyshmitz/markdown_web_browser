@@ -13,7 +13,9 @@ runner = CliRunner()
 
 
 class StubResponse:
-    def __init__(self, status_code: int, payload: dict[str, Any] | None = None, text: str = "") -> None:
+    def __init__(
+        self, status_code: int, payload: dict[str, Any] | None = None, text: str = ""
+    ) -> None:
         self.status_code = status_code
         self._payload = payload or {}
         self.text = text
@@ -43,7 +45,9 @@ class StubClient:
 
 
 def _fake_settings():
-    return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def _patch_client_ctx(monkeypatch, stub):
@@ -73,7 +77,13 @@ def test_diag_uses_snapshot_manifest(monkeypatch):
             {"tile_index": 1, "position": "bottom", "hash": "def222"},
         ],
     }
-    snapshot = {"id": "job123", "url": "https://example.com", "state": "DONE", "progress": {"done": 5, "total": 5}, "manifest": manifest}
+    snapshot = {
+        "id": "job123",
+        "url": "https://example.com",
+        "state": "DONE",
+        "progress": {"done": 5, "total": 5},
+        "manifest": manifest,
+    }
     stub = StubClient({"/jobs/job123": StubResponse(200, payload=snapshot)})
     _patch_client_ctx(monkeypatch, stub)
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
@@ -89,7 +99,12 @@ def test_diag_uses_snapshot_manifest(monkeypatch):
 
 
 def test_diag_fetches_manifest_when_missing(monkeypatch):
-    snapshot = {"id": "job456", "url": "https://example.com", "state": "DONE", "progress": {"done": 1, "total": 1}}
+    snapshot = {
+        "id": "job456",
+        "url": "https://example.com",
+        "state": "DONE",
+        "progress": {"done": 1, "total": 1},
+    }
     manifest = {"environment": {}, "warnings": [], "blocklist_hits": {}}
     stub = StubClient(
         {
@@ -119,7 +134,12 @@ def test_diag_handles_missing_job(monkeypatch):
 
 
 def test_diag_reports_manifest_error(monkeypatch):
-    snapshot = {"id": "job789", "url": "https://example.com/error", "state": "DONE", "progress": {"done": 1, "total": 1}}
+    snapshot = {
+        "id": "job789",
+        "url": "https://example.com/error",
+        "state": "DONE",
+        "progress": {"done": 1, "total": 1},
+    }
     stub = StubClient(
         {
             "/jobs/job789": StubResponse(200, payload=snapshot),

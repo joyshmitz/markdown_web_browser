@@ -65,7 +65,10 @@ def build_warnings(
 
     warnings: List[CaptureWarningEntry] = []
 
-    if settings.canvas_warning_threshold > 0 and stats.canvas_count >= settings.canvas_warning_threshold:
+    if (
+        settings.canvas_warning_threshold > 0
+        and stats.canvas_count >= settings.canvas_warning_threshold
+    ):
         warnings.append(
             CaptureWarningEntry(
                 code="canvas-heavy",
@@ -75,7 +78,10 @@ def build_warnings(
             )
         )
 
-    if settings.video_warning_threshold > 0 and stats.video_count >= settings.video_warning_threshold:
+    if (
+        settings.video_warning_threshold > 0
+        and stats.video_count >= settings.video_warning_threshold
+    ):
         warnings.append(
             CaptureWarningEntry(
                 code="video-heavy",
@@ -100,7 +106,9 @@ def build_warnings(
     return warnings
 
 
-async def collect_capture_warnings(page: Page, settings: WarningSettings) -> List[CaptureWarningEntry]:
+async def collect_capture_warnings(
+    page: Page, settings: WarningSettings
+) -> List[CaptureWarningEntry]:
     """Gather DOM stats and produce warning entries using configured thresholds."""
 
     stats = await collect_warning_stats(page)

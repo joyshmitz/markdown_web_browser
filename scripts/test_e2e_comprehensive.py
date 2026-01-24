@@ -7,28 +7,25 @@ Ultra-thorough testing with extreme detail, no mocks, production-grade validatio
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import httpx
 import json
-import os
 import psutil
 import re
 import sys
 import time
 import traceback
 from collections import defaultdict
+
 # Removed unused import: from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import Enum, auto
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Callable, Set
+from typing import Any, Dict, List, Optional, Callable, Set
 from urllib.parse import urlparse
 
 import numpy as np
-from rich.console import Console, Group, RenderableType
-from rich.live import Live
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.progress import (
     Progress,
@@ -37,25 +34,13 @@ from rich.progress import (
     BarColumn,
     TaskProgressColumn,
     TimeElapsedColumn,
-    TimeRemainingColumn,
-    MofNCompleteColumn,
-    TransferSpeedColumn,
-    DownloadColumn,
 )
-from rich.syntax import Syntax
 from rich.table import Table
-from rich.tree import Tree
 from rich.text import Text
-from rich.columns import Columns
 from rich.rule import Rule
 from rich import box
-from rich.layout import Layout
 from rich.align import Align
-from rich.markdown import Markdown
-from rich.traceback import Traceback
-from rich.prompt import Prompt, Confirm
-from rich.status import Status
-from rich.pretty import Pretty
+from rich.prompt import Confirm
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -65,8 +50,10 @@ from app.settings import get_settings
 
 # === ENUMS AND DATA CLASSES ===
 
+
 class TestCategory(Enum):
     """Test categories for organization."""
+
     SMOKE = "Smoke Tests"
     FUNCTIONAL = "Functional Tests"
     PERFORMANCE = "Performance Tests"
@@ -78,6 +65,7 @@ class TestCategory(Enum):
 
 class TestPriority(Enum):
     """Test priority levels."""
+
     CRITICAL = 1
     HIGH = 2
     MEDIUM = 3
@@ -86,6 +74,7 @@ class TestPriority(Enum):
 
 class ValidationLevel(Enum):
     """Validation thoroughness levels."""
+
     BASIC = "Basic validation"
     STANDARD = "Standard validation"
     THOROUGH = "Thorough validation"
@@ -95,6 +84,7 @@ class ValidationLevel(Enum):
 @dataclass
 class TestMetrics:
     """Comprehensive test metrics."""
+
     start_time: float = field(default_factory=time.time)
     end_time: Optional[float] = None
 
@@ -131,27 +121,41 @@ class TestMetrics:
 
         return {
             "total_time_s": round(total_time, 2),
-            "avg_api_latency_ms": round(np.mean(self.api_latencies) * 1000, 2) if self.api_latencies else 0,
-            "p95_api_latency_ms": round(np.percentile(self.api_latencies, 95) * 1000, 2) if self.api_latencies else 0,
+            "avg_api_latency_ms": round(np.mean(self.api_latencies) * 1000, 2)
+            if self.api_latencies
+            else 0,
+            "p95_api_latency_ms": round(np.percentile(self.api_latencies, 95) * 1000, 2)
+            if self.api_latencies
+            else 0,
             "avg_memory_mb": round(np.mean(self.memory_usage), 2) if self.memory_usage else 0,
             "peak_memory_mb": round(max(self.memory_usage), 2) if self.memory_usage else 0,
             "avg_cpu_percent": round(np.mean(self.cpu_usage), 2) if self.cpu_usage else 0,
-            "total_pipeline_ms": sum(filter(None, [
-                self.browser_start_ms,
-                self.capture_ms,
-                self.tiling_ms,
-                self.ocr_ms,
-                self.stitching_ms
-            ])),
-            "tiles_success_rate": (self.tiles_processed / self.tiles_generated * 100) if self.tiles_generated else 0,
+            "total_pipeline_ms": sum(
+                filter(
+                    None,
+                    [
+                        self.browser_start_ms,
+                        self.capture_ms,
+                        self.tiling_ms,
+                        self.ocr_ms,
+                        self.stitching_ms,
+                    ],
+                )
+            ),
+            "tiles_success_rate": (self.tiles_processed / self.tiles_generated * 100)
+            if self.tiles_generated
+            else 0,
             "total_requests": self.requests_made,
-            "total_mb_transferred": round((self.bytes_sent + self.bytes_received) / (1024 * 1024), 2),
+            "total_mb_transferred": round(
+                (self.bytes_sent + self.bytes_received) / (1024 * 1024), 2
+            ),
         }
 
 
 @dataclass
 class ValidationResult:
     """Detailed validation result."""
+
     passed: bool
     category: str
     check_name: str
@@ -171,13 +175,14 @@ class ValidationResult:
             "actual": str(self.actual),
             "message": self.message,
             "severity": self.severity,
-            "details": self.details
+            "details": self.details,
         }
 
 
 @dataclass
 class TestCase:
     """Comprehensive test case definition."""
+
     id: str
     name: str
     description: str
@@ -229,6 +234,7 @@ class TestCase:
 
 # === VALIDATION ENGINE ===
 
+
 class ValidationEngine:
     """Comprehensive validation engine for test results."""
 
@@ -258,7 +264,7 @@ class ValidationEngine:
         self,
         test_case: TestCase,
         response_data: Dict[str, Any],
-        level: ValidationLevel = ValidationLevel.STANDARD
+        level: ValidationLevel = ValidationLevel.STANDARD,
     ) -> List[ValidationResult]:
         """Run validations based on level."""
         results = []
@@ -268,14 +274,25 @@ class ValidationEngine:
             validators_to_run = ["status_code", "response_time"]
         elif level == ValidationLevel.STANDARD:
             validators_to_run = [
-                "status_code", "response_time", "content_type",
-                "markdown_structure", "link_extraction", "tile_generation"
+                "status_code",
+                "response_time",
+                "content_type",
+                "markdown_structure",
+                "link_extraction",
+                "tile_generation",
             ]
         elif level == ValidationLevel.THOROUGH:
             validators_to_run = [
-                "status_code", "response_time", "content_type", "json_schema",
-                "markdown_structure", "link_extraction", "tile_generation",
-                "ocr_quality", "warnings", "artifacts"
+                "status_code",
+                "response_time",
+                "content_type",
+                "json_schema",
+                "markdown_structure",
+                "link_extraction",
+                "tile_generation",
+                "ocr_quality",
+                "warnings",
+                "artifacts",
             ]
         else:  # EXHAUSTIVE
             validators_to_run = list(self.validators.keys())
@@ -284,25 +301,31 @@ class ValidationEngine:
         for validator_name in validators_to_run:
             if validator_name in self.validators:
                 try:
-                    validator_results = await self.validators[validator_name](test_case, response_data)
+                    validator_results = await self.validators[validator_name](
+                        test_case, response_data
+                    )
                     if isinstance(validator_results, list):
                         results.extend(validator_results)
                     else:
                         results.append(validator_results)
                 except Exception as e:
-                    results.append(ValidationResult(
-                        passed=False,
-                        category="validation_error",
-                        check_name=validator_name,
-                        expected="No error",
-                        actual=str(e),
-                        message=f"Validator {validator_name} failed: {str(e)}",
-                        severity="error"
-                    ))
+                    results.append(
+                        ValidationResult(
+                            passed=False,
+                            category="validation_error",
+                            check_name=validator_name,
+                            expected="No error",
+                            actual=str(e),
+                            message=f"Validator {validator_name} failed: {str(e)}",
+                            severity="error",
+                        )
+                    )
 
         return results
 
-    async def _validate_status_code(self, test_case: TestCase, data: Dict[str, Any]) -> ValidationResult:
+    async def _validate_status_code(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> ValidationResult:
         """Validate HTTP status codes."""
         status = data.get("status_code", 0)
         expected = data.get("expected_status", 200)
@@ -314,10 +337,12 @@ class ValidationEngine:
             expected=expected,
             actual=status,
             message=f"HTTP status {'matches' if status == expected else 'mismatch'}",
-            severity="critical" if status >= 500 else "error" if status >= 400 else "info"
+            severity="critical" if status >= 500 else "error" if status >= 400 else "info",
         )
 
-    async def _validate_response_time(self, test_case: TestCase, data: Dict[str, Any]) -> ValidationResult:
+    async def _validate_response_time(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> ValidationResult:
         """Validate response times."""
         response_time = data.get("response_time_ms", 0)
         threshold = 5000  # 5 seconds
@@ -329,10 +354,12 @@ class ValidationEngine:
             expected=f"< {threshold}ms",
             actual=f"{response_time}ms",
             message=f"Response time {'acceptable' if response_time < threshold else 'too slow'}",
-            severity="warning" if response_time > threshold else "info"
+            severity="warning" if response_time > threshold else "info",
         )
 
-    async def _validate_content_type(self, test_case: TestCase, data: Dict[str, Any]) -> ValidationResult:
+    async def _validate_content_type(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> ValidationResult:
         """Validate content types."""
         content_type = data.get("content_type", "")
         expected = data.get("expected_content_type", "application/json")
@@ -344,123 +371,142 @@ class ValidationEngine:
             expected=expected,
             actual=content_type,
             message=f"Content-Type {'correct' if expected in content_type else 'incorrect'}",
-            severity="error" if expected not in content_type else "info"
+            severity="error" if expected not in content_type else "info",
         )
 
-    async def _validate_json_schema(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_json_schema(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate JSON response against expected schema."""
         results = []
         json_data = data.get("json_response", {})
 
         # Check for required fields in job response
         required_fields = ["id", "state", "url", "manifest"]
-        for field in required_fields:
-            results.append(ValidationResult(
-                passed=field in json_data,
-                category="schema",
-                check_name=f"field_{field}",
-                expected="present",
-                actual="present" if field in json_data else "missing",
-                message=f"Required field '{field}' {'present' if field in json_data else 'missing'}",
-                severity="error" if field not in json_data else "info"
-            ))
+        for field_name in required_fields:
+            results.append(
+                ValidationResult(
+                    passed=field_name in json_data,
+                    category="schema",
+                    check_name=f"field_{field_name}",
+                    expected="present",
+                    actual="present" if field_name in json_data else "missing",
+                    message=f"Required field '{field_name}' {'present' if field_name in json_data else 'missing'}",
+                    severity="error" if field_name not in json_data else "info",
+                )
+            )
 
         return results
 
-    async def _validate_markdown_structure(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_markdown_structure(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate markdown output structure."""
         results = []
         markdown = data.get("markdown", "")
 
         if not markdown:
-            return [ValidationResult(
-                passed=False,
-                category="content",
-                check_name="markdown_exists",
-                expected="non-empty",
-                actual="empty",
-                message="Markdown output is empty",
-                severity="critical"
-            )]
+            return [
+                ValidationResult(
+                    passed=False,
+                    category="content",
+                    check_name="markdown_exists",
+                    expected="non-empty",
+                    actual="empty",
+                    message="Markdown output is empty",
+                    severity="critical",
+                )
+            ]
 
         # Check for expected patterns
         for pattern in test_case.expected_markdown_patterns:
             found = re.search(pattern, markdown)
-            results.append(ValidationResult(
-                passed=bool(found),
-                category="content",
-                check_name=f"pattern_{pattern[:20]}",
-                expected="present",
-                actual="found" if found else "missing",
-                message=f"Pattern {'found' if found else 'not found'}: {pattern[:50]}",
-                severity="warning" if not found else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=bool(found),
+                    category="content",
+                    check_name=f"pattern_{pattern[:20]}",
+                    expected="present",
+                    actual="found" if found else "missing",
+                    message=f"Pattern {'found' if found else 'not found'}: {pattern[:50]}",
+                    severity="warning" if not found else "info",
+                )
+            )
 
         # Check for forbidden patterns
         for pattern in test_case.forbidden_patterns:
             found = re.search(pattern, markdown)
-            results.append(ValidationResult(
-                passed=not bool(found),
-                category="content",
-                check_name=f"forbidden_{pattern[:20]}",
-                expected="absent",
-                actual="absent" if not found else "present",
-                message=f"Forbidden pattern {'not found (good)' if not found else 'FOUND (bad)'}: {pattern[:50]}",
-                severity="error" if found else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=not bool(found),
+                    category="content",
+                    check_name=f"forbidden_{pattern[:20]}",
+                    expected="absent",
+                    actual="absent" if not found else "present",
+                    message=f"Forbidden pattern {'not found (good)' if not found else 'FOUND (bad)'}: {pattern[:50]}",
+                    severity="error" if found else "info",
+                )
+            )
 
         # Structure checks
-        has_headers = bool(re.search(r'^#+\s+', markdown, re.MULTILINE))
-        has_links = bool(re.search(r'\[.*?\]\(.*?\)', markdown))
-        has_provenance = bool(re.search(r'<!--.*tile.*-->', markdown, re.IGNORECASE))
+        has_headers = bool(re.search(r"^#+\s+", markdown, re.MULTILINE))
+        has_links = bool(re.search(r"\[.*?\]\(.*?\)", markdown))
+        has_provenance = bool(re.search(r"<!--.*tile.*-->", markdown, re.IGNORECASE))
 
-        results.extend([
-            ValidationResult(
-                passed=has_headers,
-                category="structure",
-                check_name="has_headers",
-                expected=True,
-                actual=has_headers,
-                message=f"Markdown {'contains' if has_headers else 'missing'} headers",
-                severity="warning" if not has_headers else "info"
-            ),
-            ValidationResult(
-                passed=has_links or not test_case.expected_links_min,
-                category="structure",
-                check_name="has_links",
-                expected=True,
-                actual=has_links,
-                message=f"Markdown {'contains' if has_links else 'missing'} links",
-                severity="info"
-            ),
-            ValidationResult(
-                passed=has_provenance,
-                category="structure",
-                check_name="has_provenance",
-                expected=True,
-                actual=has_provenance,
-                message=f"Provenance comments {'present' if has_provenance else 'missing'}",
-                severity="info"
-            ),
-        ])
+        results.extend(
+            [
+                ValidationResult(
+                    passed=has_headers,
+                    category="structure",
+                    check_name="has_headers",
+                    expected=True,
+                    actual=has_headers,
+                    message=f"Markdown {'contains' if has_headers else 'missing'} headers",
+                    severity="warning" if not has_headers else "info",
+                ),
+                ValidationResult(
+                    passed=has_links or not test_case.expected_links_min,
+                    category="structure",
+                    check_name="has_links",
+                    expected=True,
+                    actual=has_links,
+                    message=f"Markdown {'contains' if has_links else 'missing'} links",
+                    severity="info",
+                ),
+                ValidationResult(
+                    passed=has_provenance,
+                    category="structure",
+                    check_name="has_provenance",
+                    expected=True,
+                    actual=has_provenance,
+                    message=f"Provenance comments {'present' if has_provenance else 'missing'}",
+                    severity="info",
+                ),
+            ]
+        )
 
         return results
 
-    async def _validate_link_extraction(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_link_extraction(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate link extraction quality."""
         results = []
         links_json = data.get("links_json", {})
 
         if not links_json:
-            return [ValidationResult(
-                passed=test_case.expected_links_min is None or test_case.expected_links_min == 0,
-                category="links",
-                check_name="links_exist",
-                expected="> 0",
-                actual="0",
-                message="No links data available",
-                severity="warning"
-            )]
+            return [
+                ValidationResult(
+                    passed=test_case.expected_links_min is None
+                    or test_case.expected_links_min == 0,
+                    category="links",
+                    check_name="links_exist",
+                    expected="> 0",
+                    actual="0",
+                    message="No links data available",
+                    severity="warning",
+                )
+            ]
 
         # Count total links
         total_links = 0
@@ -470,15 +516,17 @@ class ValidationEngine:
 
         # Validate link count
         if test_case.expected_links_min is not None:
-            results.append(ValidationResult(
-                passed=total_links >= test_case.expected_links_min,
-                category="links",
-                check_name="link_count_min",
-                expected=f">= {test_case.expected_links_min}",
-                actual=str(total_links),
-                message=f"Found {total_links} links (expected >= {test_case.expected_links_min})",
-                severity="warning" if total_links < test_case.expected_links_min else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=total_links >= test_case.expected_links_min,
+                    category="links",
+                    check_name="link_count_min",
+                    expected=f">= {test_case.expected_links_min}",
+                    actual=str(total_links),
+                    message=f"Found {total_links} links (expected >= {test_case.expected_links_min})",
+                    severity="warning" if total_links < test_case.expected_links_min else "info",
+                )
+            )
 
         # Check for duplicate links
         all_urls = []
@@ -489,32 +537,42 @@ class ValidationEngine:
         unique_urls = set(all_urls)
         duplicate_count = len(all_urls) - len(unique_urls)
 
-        results.append(ValidationResult(
-            passed=duplicate_count == 0,
-            category="links",
-            check_name="no_duplicates",
-            expected="0",
-            actual=str(duplicate_count),
-            message=f"{'No duplicate' if duplicate_count == 0 else f'{duplicate_count} duplicate'} links found",
-            severity="info"
-        ))
+        results.append(
+            ValidationResult(
+                passed=duplicate_count == 0,
+                category="links",
+                check_name="no_duplicates",
+                expected="0",
+                actual=str(duplicate_count),
+                message=f"{'No duplicate' if duplicate_count == 0 else f'{duplicate_count} duplicate'} links found",
+                severity="info",
+            )
+        )
 
         # Check link validity (basic)
-        invalid_links = [url for url in all_urls if url and (url.startswith("javascript:") or url.startswith("data:"))]
+        invalid_links = [
+            url
+            for url in all_urls
+            if url and (url.startswith("javascript:") or url.startswith("data:"))
+        ]
 
-        results.append(ValidationResult(
-            passed=len(invalid_links) == 0,
-            category="links",
-            check_name="link_validity",
-            expected="all valid",
-            actual=f"{len(invalid_links)} invalid" if invalid_links else "all valid",
-            message=f"{'All links valid' if not invalid_links else f'{len(invalid_links)} invalid links found'}",
-            severity="warning" if invalid_links else "info"
-        ))
+        results.append(
+            ValidationResult(
+                passed=len(invalid_links) == 0,
+                category="links",
+                check_name="link_validity",
+                expected="all valid",
+                actual=f"{len(invalid_links)} invalid" if invalid_links else "all valid",
+                message=f"{'All links valid' if not invalid_links else f'{len(invalid_links)} invalid links found'}",
+                severity="warning" if invalid_links else "info",
+            )
+        )
 
         return results
 
-    async def _validate_tile_generation(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_tile_generation(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate tile generation."""
         results = []
         manifest = data.get("manifest", {})
@@ -522,43 +580,51 @@ class ValidationEngine:
 
         # Check tile count
         if test_case.expected_tiles_min is not None:
-            results.append(ValidationResult(
-                passed=tiles_total >= test_case.expected_tiles_min,
-                category="tiles",
-                check_name="tile_count_min",
-                expected=f">= {test_case.expected_tiles_min}",
-                actual=str(tiles_total),
-                message=f"Generated {tiles_total} tiles",
-                severity="error" if tiles_total < test_case.expected_tiles_min else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=tiles_total >= test_case.expected_tiles_min,
+                    category="tiles",
+                    check_name="tile_count_min",
+                    expected=f">= {test_case.expected_tiles_min}",
+                    actual=str(tiles_total),
+                    message=f"Generated {tiles_total} tiles",
+                    severity="error" if tiles_total < test_case.expected_tiles_min else "info",
+                )
+            )
 
         if test_case.expected_tiles_max is not None:
-            results.append(ValidationResult(
-                passed=tiles_total <= test_case.expected_tiles_max,
-                category="tiles",
-                check_name="tile_count_max",
-                expected=f"<= {test_case.expected_tiles_max}",
-                actual=str(tiles_total),
-                message=f"Generated {tiles_total} tiles",
-                severity="warning" if tiles_total > test_case.expected_tiles_max else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=tiles_total <= test_case.expected_tiles_max,
+                    category="tiles",
+                    check_name="tile_count_max",
+                    expected=f"<= {test_case.expected_tiles_max}",
+                    actual=str(tiles_total),
+                    message=f"Generated {tiles_total} tiles",
+                    severity="warning" if tiles_total > test_case.expected_tiles_max else "info",
+                )
+            )
 
         # Check overlap ratios
         overlap_ratio = manifest.get("overlap_match_ratio")
         if overlap_ratio is not None:
-            results.append(ValidationResult(
-                passed=overlap_ratio > 0.7,
-                category="tiles",
-                check_name="overlap_quality",
-                expected="> 0.7",
-                actual=str(round(overlap_ratio, 2)),
-                message=f"Tile overlap ratio: {overlap_ratio:.2f}",
-                severity="warning" if overlap_ratio < 0.7 else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=overlap_ratio > 0.7,
+                    category="tiles",
+                    check_name="overlap_quality",
+                    expected="> 0.7",
+                    actual=str(round(overlap_ratio, 2)),
+                    message=f"Tile overlap ratio: {overlap_ratio:.2f}",
+                    severity="warning" if overlap_ratio < 0.7 else "info",
+                )
+            )
 
         return results
 
-    async def _validate_ocr_quality(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_ocr_quality(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate OCR quality metrics."""
         results = []
         manifest = data.get("manifest", {})
@@ -566,15 +632,17 @@ class ValidationEngine:
         # Check OCR timing
         ocr_ms = manifest.get("timings", {}).get("ocr_ms")
         if ocr_ms:
-            results.append(ValidationResult(
-                passed=ocr_ms < 30000,  # 30 seconds
-                category="ocr",
-                check_name="ocr_speed",
-                expected="< 30000ms",
-                actual=f"{ocr_ms}ms",
-                message=f"OCR processing took {ocr_ms}ms",
-                severity="warning" if ocr_ms > 30000 else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=ocr_ms < 30000,  # 30 seconds
+                    category="ocr",
+                    check_name="ocr_speed",
+                    expected="< 30000ms",
+                    actual=f"{ocr_ms}ms",
+                    message=f"OCR processing took {ocr_ms}ms",
+                    severity="warning" if ocr_ms > 30000 else "info",
+                )
+            )
 
         # Check OCR batches
         ocr_batches = manifest.get("ocr_batches", [])
@@ -582,24 +650,28 @@ class ValidationEngine:
             total_tiles = sum(len(batch.get("tile_ids", [])) for batch in ocr_batches)
             avg_latency = np.mean([batch.get("latency_ms", 0) for batch in ocr_batches])
 
-            results.append(ValidationResult(
-                passed=True,
-                category="ocr",
-                check_name="ocr_batches",
-                expected="processed",
-                actual=f"{len(ocr_batches)} batches",
-                message=f"Processed {total_tiles} tiles in {len(ocr_batches)} batches (avg {avg_latency:.0f}ms)",
-                severity="info",
-                details={
-                    "batch_count": len(ocr_batches),
-                    "total_tiles": total_tiles,
-                    "avg_latency_ms": avg_latency
-                }
-            ))
+            results.append(
+                ValidationResult(
+                    passed=True,
+                    category="ocr",
+                    check_name="ocr_batches",
+                    expected="processed",
+                    actual=f"{len(ocr_batches)} batches",
+                    message=f"Processed {total_tiles} tiles in {len(ocr_batches)} batches (avg {avg_latency:.0f}ms)",
+                    severity="info",
+                    details={
+                        "batch_count": len(ocr_batches),
+                        "total_tiles": total_tiles,
+                        "avg_latency_ms": avg_latency,
+                    },
+                )
+            )
 
         return results
 
-    async def _validate_warnings(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_warnings(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate warnings and errors."""
         results = []
         manifest = data.get("manifest", {})
@@ -607,15 +679,17 @@ class ValidationEngine:
 
         # Check warning count
         warning_count = len(warnings)
-        results.append(ValidationResult(
-            passed=warning_count < 5,
-            category="warnings",
-            check_name="warning_count",
-            expected="< 5",
-            actual=str(warning_count),
-            message=f"{'No' if warning_count == 0 else warning_count} warnings generated",
-            severity="warning" if warning_count >= 5 else "info"
-        ))
+        results.append(
+            ValidationResult(
+                passed=warning_count < 5,
+                category="warnings",
+                check_name="warning_count",
+                expected="< 5",
+                actual=str(warning_count),
+                message=f"{'No' if warning_count == 0 else warning_count} warnings generated",
+                severity="warning" if warning_count >= 5 else "info",
+            )
+        )
 
         # Check for specific warning types
         warning_types = defaultdict(int)
@@ -624,32 +698,38 @@ class ValidationEngine:
 
         for wtype, count in warning_types.items():
             severity = "error" if wtype in ["error", "critical"] else "warning"
-            results.append(ValidationResult(
-                passed=wtype not in ["error", "critical"],
-                category="warnings",
-                check_name=f"warning_type_{wtype}",
-                expected="0",
-                actual=str(count),
-                message=f"{count} {wtype} warnings",
-                severity=severity
-            ))
+            results.append(
+                ValidationResult(
+                    passed=wtype not in ["error", "critical"],
+                    category="warnings",
+                    check_name=f"warning_type_{wtype}",
+                    expected="0",
+                    actual=str(count),
+                    message=f"{count} {wtype} warnings",
+                    severity=severity,
+                )
+            )
 
         # Check for expected warnings
         for expected_warning in test_case.expected_warnings:
             found = any(expected_warning in str(w) for w in warnings)
-            results.append(ValidationResult(
-                passed=found,
-                category="warnings",
-                check_name=f"expected_warning",
-                expected=expected_warning,
-                actual="found" if found else "missing",
-                message=f"Expected warning {'found' if found else 'not found'}: {expected_warning[:50]}",
-                severity="info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=found,
+                    category="warnings",
+                    check_name="expected_warning",
+                    expected=expected_warning,
+                    actual="found" if found else "missing",
+                    message=f"Expected warning {'found' if found else 'not found'}: {expected_warning[:50]}",
+                    severity="info",
+                )
+            )
 
         return results
 
-    async def _validate_artifacts(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_artifacts(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate all artifacts are present and valid."""
         results = []
 
@@ -663,31 +743,37 @@ class ValidationEngine:
             artifact = data.get(key)
 
             if artifact is None:
-                results.append(ValidationResult(
-                    passed=False,
-                    category="artifacts",
-                    check_name=f"artifact_{filename}",
-                    expected="present",
-                    actual="missing",
-                    message=f"Artifact {filename} is missing",
-                    severity="error"
-                ))
+                results.append(
+                    ValidationResult(
+                        passed=False,
+                        category="artifacts",
+                        check_name=f"artifact_{filename}",
+                        expected="present",
+                        actual="missing",
+                        message=f"Artifact {filename} is missing",
+                        severity="error",
+                    )
+                )
             else:
                 # Check size
                 size = len(str(artifact)) if isinstance(artifact, (dict, list)) else len(artifact)
-                results.append(ValidationResult(
-                    passed=size > 0,
-                    category="artifacts",
-                    check_name=f"artifact_{filename}_size",
-                    expected="> 0",
-                    actual=str(size),
-                    message=f"Artifact {filename} size: {size} bytes",
-                    severity="error" if size == 0 else "info"
-                ))
+                results.append(
+                    ValidationResult(
+                        passed=size > 0,
+                        category="artifacts",
+                        check_name=f"artifact_{filename}_size",
+                        expected="> 0",
+                        actual=str(size),
+                        message=f"Artifact {filename} size: {size} bytes",
+                        severity="error" if size == 0 else "info",
+                    )
+                )
 
         return results
 
-    async def _validate_performance(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_performance(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate performance metrics."""
         results = []
         manifest = data.get("manifest", {})
@@ -696,15 +782,17 @@ class ValidationEngine:
         # Check total time
         total_ms = timings.get("total_ms", 0)
         if total_ms:
-            results.append(ValidationResult(
-                passed=total_ms < test_case.timeout * 1000,
-                category="performance",
-                check_name="total_time",
-                expected=f"< {test_case.timeout * 1000}ms",
-                actual=f"{total_ms}ms",
-                message=f"Total processing time: {total_ms}ms",
-                severity="error" if total_ms >= test_case.timeout * 1000 else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=total_ms < test_case.timeout * 1000,
+                    category="performance",
+                    check_name="total_time",
+                    expected=f"< {test_case.timeout * 1000}ms",
+                    actual=f"{total_ms}ms",
+                    message=f"Total processing time: {total_ms}ms",
+                    severity="error" if total_ms >= test_case.timeout * 1000 else "info",
+                )
+            )
 
         # Check individual stage timings
         stages = ["capture_ms", "ocr_ms", "stitch_ms"]
@@ -713,63 +801,66 @@ class ValidationEngine:
             if stage_time:
                 # Dynamic threshold based on stage
                 threshold = 10000 if "capture" in stage else 20000 if "ocr" in stage else 5000
-                results.append(ValidationResult(
-                    passed=stage_time < threshold,
-                    category="performance",
-                    check_name=f"stage_{stage}",
-                    expected=f"< {threshold}ms",
-                    actual=f"{stage_time}ms",
-                    message=f"{stage}: {stage_time}ms",
-                    severity="warning" if stage_time >= threshold else "info"
-                ))
+                results.append(
+                    ValidationResult(
+                        passed=stage_time < threshold,
+                        category="performance",
+                        check_name=f"stage_{stage}",
+                        expected=f"< {threshold}ms",
+                        actual=f"{stage_time}ms",
+                        message=f"{stage}: {stage_time}ms",
+                        severity="warning" if stage_time >= threshold else "info",
+                    )
+                )
 
         return results
 
-    async def _validate_security(self, test_case: TestCase, data: Dict[str, Any]) -> List[ValidationResult]:
+    async def _validate_security(
+        self, test_case: TestCase, data: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Validate security aspects."""
         results = []
 
         # Check for sensitive data exposure
         markdown = data.get("markdown", "")
-        sensitive_patterns = [
-            r"api[_-]?key",
-            r"secret",
-            r"password",
-            r"token",
-            r"private[_-]?key"
-        ]
+        sensitive_patterns = [r"api[_-]?key", r"secret", r"password", r"token", r"private[_-]?key"]
 
         for pattern in sensitive_patterns:
             found = bool(re.search(pattern, markdown, re.IGNORECASE))
-            results.append(ValidationResult(
-                passed=not found,
-                category="security",
-                check_name=f"no_{pattern}",
-                expected="not exposed",
-                actual="safe" if not found else "EXPOSED",
-                message=f"Sensitive pattern '{pattern}' {'not found (good)' if not found else 'FOUND (security risk)'}",
-                severity="critical" if found else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=not found,
+                    category="security",
+                    check_name=f"no_{pattern}",
+                    expected="not exposed",
+                    actual="safe" if not found else "EXPOSED",
+                    message=f"Sensitive pattern '{pattern}' {'not found (good)' if not found else 'FOUND (security risk)'}",
+                    severity="critical" if found else "info",
+                )
+            )
 
         # Check SSL/TLS usage
         manifest = data.get("manifest", {})
         if manifest:
             url = manifest.get("url", "")
             is_https = url.startswith("https://")
-            results.append(ValidationResult(
-                passed=is_https or "localhost" in url,
-                category="security",
-                check_name="https_usage",
-                expected="https",
-                actual="https" if is_https else "http",
-                message=f"{'Secure' if is_https else 'Insecure'} protocol used",
-                severity="warning" if not is_https and "localhost" not in url else "info"
-            ))
+            results.append(
+                ValidationResult(
+                    passed=is_https or "localhost" in url,
+                    category="security",
+                    check_name="https_usage",
+                    expected="https",
+                    actual="https" if is_https else "http",
+                    message=f"{'Secure' if is_https else 'Insecure'} protocol used",
+                    severity="warning" if not is_https and "localhost" not in url else "info",
+                )
+            )
 
         return results
 
 
 # === SYSTEM MONITOR ===
+
 
 class SystemMonitor:
     """Monitor system resources during tests."""
@@ -847,6 +938,7 @@ class SystemMonitor:
 
 # === TEST RUNNER ===
 
+
 class ComprehensiveTestRunner:
     """Ultra-thorough test runner with extreme detail."""
 
@@ -855,7 +947,7 @@ class ComprehensiveTestRunner:
         api_url: str = "http://localhost:8000",
         interactive: bool = False,
         parallel: int = 1,
-        verbose: bool = True
+        verbose: bool = True,
     ):
         self.api_url = api_url
         self.interactive = interactive
@@ -888,7 +980,7 @@ class ComprehensiveTestRunner:
                 url="health_check",
                 timeout=5.0,
                 validation_level=ValidationLevel.BASIC,
-                tags={"quick", "essential"}
+                tags={"quick", "essential"},
             ),
             TestCase(
                 id="smoke_002",
@@ -902,9 +994,8 @@ class ComprehensiveTestRunner:
                 expected_tiles_max=2,
                 expected_links_min=1,
                 expected_markdown_patterns=[r"Example Domain", r"This domain"],
-                tags={"quick", "essential"}
+                tags={"quick", "essential"},
             ),
-
             # === FUNCTIONAL TESTS ===
             TestCase(
                 id="func_001",
@@ -918,7 +1009,7 @@ class ComprehensiveTestRunner:
                 expected_links_min=20,
                 expected_markdown_patterns=[r"# Markdown", r"## ", r"###"],
                 validation_level=ValidationLevel.THOROUGH,
-                tags={"complex", "content"}
+                tags={"complex", "content"},
             ),
             TestCase(
                 id="func_002",
@@ -931,7 +1022,7 @@ class ComprehensiveTestRunner:
                 expected_tiles_min=2,
                 expected_links_min=10,
                 validation_level=ValidationLevel.THOROUGH,
-                tags={"spa", "dynamic"}
+                tags={"spa", "dynamic"},
             ),
             TestCase(
                 id="func_003",
@@ -944,9 +1035,8 @@ class ComprehensiveTestRunner:
                 expected_tiles_min=3,
                 expected_links_min=30,
                 validation_level=ValidationLevel.THOROUGH,
-                tags={"media", "news"}
+                tags={"media", "news"},
             ),
-
             # === EDGE CASES ===
             TestCase(
                 id="edge_001",
@@ -960,7 +1050,7 @@ class ComprehensiveTestRunner:
                 expected_tiles_max=1,
                 expected_links_min=0,
                 validation_level=ValidationLevel.STANDARD,
-                tags={"edge", "minimal"}
+                tags={"edge", "minimal"},
             ),
             TestCase(
                 id="edge_002",
@@ -972,7 +1062,7 @@ class ComprehensiveTestRunner:
                 timeout=120.0,
                 expected_tiles_min=5,
                 validation_level=ValidationLevel.STANDARD,
-                tags={"edge", "large"}
+                tags={"edge", "large"},
             ),
             TestCase(
                 id="edge_003",
@@ -984,9 +1074,8 @@ class ComprehensiveTestRunner:
                 timeout=60.0,
                 expected_tiles_min=2,
                 validation_level=ValidationLevel.STANDARD,
-                tags={"spa", "javascript"}
+                tags={"spa", "javascript"},
             ),
-
             # === PERFORMANCE TESTS ===
             TestCase(
                 id="perf_001",
@@ -998,7 +1087,7 @@ class ComprehensiveTestRunner:
                 timeout=20.0,
                 validation_level=ValidationLevel.BASIC,
                 use_cache=True,  # Test cache performance
-                tags={"performance", "latency"}
+                tags={"performance", "latency"},
             ),
             TestCase(
                 id="perf_002",
@@ -1009,9 +1098,8 @@ class ComprehensiveTestRunner:
                 url="https://unsplash.com/",
                 timeout=90.0,
                 validation_level=ValidationLevel.STANDARD,
-                tags={"performance", "images"}
+                tags={"performance", "images"},
             ),
-
             # === SECURITY TESTS ===
             TestCase(
                 id="sec_001",
@@ -1023,9 +1111,8 @@ class ComprehensiveTestRunner:
                 timeout=30.0,
                 validation_level=ValidationLevel.THOROUGH,
                 forbidden_patterns=[r"private", r"secret", r"api[_-]key"],
-                tags={"security", "ssl"}
+                tags={"security", "ssl"},
             ),
-
             # === REGRESSION TESTS ===
             TestCase(
                 id="reg_001",
@@ -1037,7 +1124,7 @@ class ComprehensiveTestRunner:
                 timeout=60.0,
                 expected_tiles_min=2,
                 validation_level=ValidationLevel.THOROUGH,
-                tags={"regression", "historical"}
+                tags={"regression", "historical"},
             ),
         ]
 
@@ -1065,19 +1152,31 @@ class ComprehensiveTestRunner:
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     response = await client.head(f"{self.api_url}{endpoint}")
-                    checks.append((f"Endpoint {endpoint}", response.status_code < 500, response.status_code))
+                    checks.append(
+                        (f"Endpoint {endpoint}", response.status_code < 500, response.status_code)
+                    )
             except Exception as e:
                 checks.append((f"Endpoint {endpoint}", False, str(e)))
 
         # Check system resources
         memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
+        disk = psutil.disk_usage("/")
 
-        checks.extend([
-            ("Memory Available", memory.available > 1024 * 1024 * 1024, f"{memory.available / (1024**3):.1f}GB"),
-            ("Disk Space", disk.free > 5 * 1024 * 1024 * 1024, f"{disk.free / (1024**3):.1f}GB"),
-            ("CPU Count", psutil.cpu_count() > 0, f"{psutil.cpu_count()} cores"),
-        ])
+        checks.extend(
+            [
+                (
+                    "Memory Available",
+                    memory.available > 1024 * 1024 * 1024,
+                    f"{memory.available / (1024**3):.1f}GB",
+                ),
+                (
+                    "Disk Space",
+                    disk.free > 5 * 1024 * 1024 * 1024,
+                    f"{disk.free / (1024**3):.1f}GB",
+                ),
+                ("CPU Count", psutil.cpu_count() > 0, f"{psutil.cpu_count()} cores"),
+            ]
+        )
 
         # Display results
         table = Table(title="Pre-Flight Check Results", box=box.ROUNDED)
@@ -1097,7 +1196,9 @@ class ComprehensiveTestRunner:
         self.pre_flight_passed = all_passed
 
         if not all_passed and self.interactive:
-            continue_anyway = Confirm.ask("[yellow]Pre-flight checks failed. Continue anyway?[/yellow]")
+            continue_anyway = Confirm.ask(
+                "[yellow]Pre-flight checks failed. Continue anyway?[/yellow]"
+            )
             if continue_anyway:
                 all_passed = True
 
@@ -1124,8 +1225,7 @@ class ComprehensiveTestRunner:
                     test_case.metrics.api_latencies.append(elapsed)
 
                     validation = await self.validation_engine._validate_status_code(
-                        test_case,
-                        {"status_code": response.status_code, "expected_status": 200}
+                        test_case, {"status_code": response.status_code, "expected_status": 200}
                     )
                     test_case.add_validation(validation)
             else:
@@ -1141,7 +1241,7 @@ class ComprehensiveTestRunner:
                             "url": test_case.url,
                             "profile_id": test_case.profile_id,
                             "reuse_cache": test_case.use_cache,
-                        }
+                        },
                     )
                     elapsed = time.time() - start
                     test_case.metrics.api_latencies.append(elapsed)
@@ -1160,12 +1260,12 @@ class ComprehensiveTestRunner:
                         # Get final results
                         if final_state == "DONE":
                             if self.verbose:
-                                self.console.print(f"[cyan]Retrieving artifacts...[/cyan]")
+                                self.console.print("[cyan]Retrieving artifacts...[/cyan]")
                             await self._retrieve_artifacts(client, job_id, test_case)
 
                             # Run validations
                             if self.verbose:
-                                self.console.print(f"[cyan]Running validations...[/cyan]")
+                                self.console.print("[cyan]Running validations...[/cyan]")
                             response_data = {
                                 "status_code": 200,
                                 "json_response": test_case.artifacts.get("job_data", {}),
@@ -1176,9 +1276,7 @@ class ComprehensiveTestRunner:
                             }
 
                             validations = await self.validation_engine.validate(
-                                test_case,
-                                response_data,
-                                test_case.validation_level
+                                test_case, response_data, test_case.validation_level
                             )
 
                             for validation in validations:
@@ -1206,49 +1304,57 @@ class ComprehensiveTestRunner:
                                 if warnings:
                                     error_details["warnings"] = warnings
 
-                            test_case.add_validation(ValidationResult(
-                                passed=False,
-                                category="job",
-                                check_name="job_completion",
-                                expected="DONE",
-                                actual=final_state,
-                                message=error_message,
-                                severity="critical",
-                                details=error_details
-                            ))
+                            test_case.add_validation(
+                                ValidationResult(
+                                    passed=False,
+                                    category="job",
+                                    check_name="job_completion",
+                                    expected="DONE",
+                                    actual=final_state,
+                                    message=error_message,
+                                    severity="critical",
+                                    details=error_details,
+                                )
+                            )
                     else:
-                        test_case.add_validation(ValidationResult(
-                            passed=False,
-                            category="http",
-                            check_name="job_submission",
-                            expected="200/202",
-                            actual=str(response.status_code),
-                            message=f"Failed to submit job: HTTP {response.status_code}",
-                            severity="critical"
-                        ))
+                        test_case.add_validation(
+                            ValidationResult(
+                                passed=False,
+                                category="http",
+                                check_name="job_submission",
+                                expected="200/202",
+                                actual=str(response.status_code),
+                                message=f"Failed to submit job: HTTP {response.status_code}",
+                                severity="critical",
+                            )
+                        )
 
         except asyncio.TimeoutError:
-            test_case.add_validation(ValidationResult(
-                passed=False,
-                category="timeout",
-                check_name="test_timeout",
-                expected=f"< {test_case.timeout}s",
-                actual="timeout",
-                message=f"Test timed out after {test_case.timeout}s",
-                severity="critical"
-            ))
+            test_case.add_validation(
+                ValidationResult(
+                    passed=False,
+                    category="timeout",
+                    check_name="test_timeout",
+                    expected=f"< {test_case.timeout}s",
+                    actual="timeout",
+                    message=f"Test timed out after {test_case.timeout}s",
+                    severity="critical",
+                )
+            )
 
         except Exception as e:
-            test_case.add_validation(ValidationResult(
-                passed=False,
-                category="error",
-                check_name="unexpected_error",
-                expected="no error",
-                actual=str(e),
-                message=f"Unexpected error: {str(e)}",
-                severity="critical",
-                details={"traceback": traceback.format_exc()}
-            ))
+            test_case.add_validation(
+                ValidationResult(
+                    passed=False,
+                    category="error",
+                    check_name="unexpected_error",
+                    expected="no error",
+                    actual=str(e),
+                    message=f"Unexpected error: {str(e)}",
+                    severity="critical",
+                    details={"traceback": traceback.format_exc()},
+                )
+            )
 
         finally:
             pass  # Status no longer needed
@@ -1257,10 +1363,7 @@ class ComprehensiveTestRunner:
         return test_case
 
     async def _monitor_job(
-        self,
-        client: httpx.AsyncClient,
-        job_id: str,
-        test_case: TestCase
+        self, client: httpx.AsyncClient, job_id: str, test_case: TestCase
     ) -> str:
         """Monitor job progress with detailed metrics."""
 
@@ -1292,7 +1395,9 @@ class ComprehensiveTestRunner:
                         if total > 0:
                             pct = (done / total) * 100
                             if self.verbose:
-                                self.console.print(f"[cyan]{test_case.name}: {state} ({pct:.0f}%)[/cyan]")
+                                self.console.print(
+                                    f"[cyan]{test_case.name}: {state} ({pct:.0f}%)[/cyan]"
+                                )
                         else:
                             if self.verbose:
                                 self.console.print(f"[cyan]{test_case.name}: {state}[/cyan]")
@@ -1338,10 +1443,7 @@ class ComprehensiveTestRunner:
         return "TIMEOUT"
 
     async def _retrieve_artifacts(
-        self,
-        client: httpx.AsyncClient,
-        job_id: str,
-        test_case: TestCase
+        self, client: httpx.AsyncClient, job_id: str, test_case: TestCase
     ):
         """Retrieve job artifacts."""
 
@@ -1416,7 +1518,7 @@ class ComprehensiveTestRunner:
                     issues.append(v.check_name)
             issues_display = ", ".join(issues[:3]) if issues else "None"
             if len(issues) > 3:
-                issues_display += f" (+{len(issues)-3} more)"
+                issues_display += f" (+{len(issues) - 3} more)"
 
             results_table.add_row(
                 test_case.id,
@@ -1425,7 +1527,7 @@ class ComprehensiveTestRunner:
                 status_display,
                 validation_display,
                 time_display,
-                issues_display
+                issues_display,
             )
 
         # Create summary statistics
@@ -1438,16 +1540,16 @@ class ComprehensiveTestRunner:
         success_rate = (passed_tests / total_tests * 100) if total_tests > 0 else 0
 
         stats_table.add_row(
-            "Total Tests:", str(total_tests),
-            "Success Rate:", f"{success_rate:.1f}%"
+            "Total Tests:", str(total_tests), "Success Rate:", f"{success_rate:.1f}%"
         )
         stats_table.add_row(
-            "Passed:", f"[green]{passed_tests}[/green]",
-            "Failed:", f"[red]{failed_tests}[/red]"
+            "Passed:", f"[green]{passed_tests}[/green]", "Failed:", f"[red]{failed_tests}[/red]"
         )
         stats_table.add_row(
-            "Partial:", f"[yellow]{partial_tests}[/yellow]",
-            "Skipped:", str(total_tests - passed_tests - failed_tests - partial_tests)
+            "Partial:",
+            f"[yellow]{partial_tests}[/yellow]",
+            "Skipped:",
+            str(total_tests - passed_tests - failed_tests - partial_tests),
         )
 
         # Create performance summary
@@ -1466,7 +1568,7 @@ class ComprehensiveTestRunner:
             Rule(style="dim"),
             Align.center(stats_table),
             Rule(style="dim"),
-            perf_table
+            perf_table,
         )
 
         return Panel(report_group, border_style="magenta", box=box.DOUBLE)
@@ -1475,12 +1577,15 @@ class ComprehensiveTestRunner:
         """Run all tests with comprehensive reporting."""
 
         # Print header
-        self.console.print("""
+        self.console.print(
+            """
 ╔═══════════════════════════════════════════════════════════════════════════════════════════════╗
 ║                           COMPREHENSIVE END-TO-END TEST SUITE                                ║
 ║                          Ultra-Thorough Production-Grade Testing                             ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
-        """, style="bold magenta")
+        """,
+            style="bold magenta",
+        )
 
         # Run pre-flight checks
         if not await self.run_pre_flight_checks():
@@ -1522,13 +1627,9 @@ class ComprehensiveTestRunner:
             BarColumn(),
             TaskProgressColumn(),
             TimeElapsedColumn(),
-            console=self.console
+            console=self.console,
         ) as progress:
-
-            task = progress.add_task(
-                "[cyan]Running tests...",
-                total=len(self.test_cases)
-            )
+            task = progress.add_task("[cyan]Running tests...", total=len(self.test_cases))
 
             # Group tests by priority
             priority_groups = defaultdict(list)
@@ -1536,7 +1637,12 @@ class ComprehensiveTestRunner:
                 priority_groups[tc.priority].append(tc)
 
             # Run tests in priority order
-            for priority in [TestPriority.CRITICAL, TestPriority.HIGH, TestPriority.MEDIUM, TestPriority.LOW]:
+            for priority in [
+                TestPriority.CRITICAL,
+                TestPriority.HIGH,
+                TestPriority.MEDIUM,
+                TestPriority.LOW,
+            ]:
                 tests = priority_groups.get(priority, [])
 
                 for test_case in tests:
@@ -1579,14 +1685,12 @@ class ComprehensiveTestRunner:
             sys_table.add_column("Peak", style="red")
 
             sys_table.add_row(
-                "CPU %",
-                f"{system_stats['cpu']['avg']:.1f}%",
-                f"{system_stats['cpu']['max']:.1f}%"
+                "CPU %", f"{system_stats['cpu']['avg']:.1f}%", f"{system_stats['cpu']['max']:.1f}%"
             )
             sys_table.add_row(
                 "Memory (MB)",
                 f"{system_stats['memory_mb']['avg']:.0f}",
-                f"{system_stats['memory_mb']['max']:.0f}"
+                f"{system_stats['memory_mb']['max']:.0f}",
             )
 
             self.console.print(sys_table)
@@ -1616,7 +1720,7 @@ class ComprehensiveTestRunner:
                     "name": tc.name,
                     "status": tc.get_status(),
                     "validations": [v.to_dict() for v in tc.validations],
-                    "metrics": tc.metrics.calculate_summary()
+                    "metrics": tc.metrics.calculate_summary(),
                 }
                 for tc in self.test_cases
             ],
@@ -1626,7 +1730,7 @@ class ComprehensiveTestRunner:
         json_path = reports_dir / f"test_report_{timestamp}.json"
         json_path.write_text(json.dumps(json_report, indent=2), encoding="utf-8")
 
-        self.console.print(f"\n📄 Reports saved:")
+        self.console.print("\n📄 Reports saved:")
         self.console.print(f"  • HTML: {html_path}")
         self.console.print(f"  • JSON: {json_path}")
 
@@ -1652,12 +1756,13 @@ class ComprehensiveTestRunner:
             Panel(
                 Align.center(Text(verdict, style=style)),
                 border_style=style.split()[1] if " " in style else "green",
-                box=box.DOUBLE
+                box=box.DOUBLE,
             )
         )
 
 
 # === MAIN ENTRY POINT ===
+
 
 async def main():
     """Main entry point."""
@@ -1675,44 +1780,22 @@ Examples:
   %(prog)s --parallel 4                            # Run 4 tests in parallel
   %(prog)s --api-url http://prod                   # Test against production
   %(prog)s --verbose                               # Extra detailed output
-        """
+        """,
     )
 
-    parser.add_argument(
-        "--api-url",
-        default="http://localhost:8000",
-        help="API base URL to test"
-    )
+    parser.add_argument("--api-url", default="http://localhost:8000", help="API base URL to test")
     parser.add_argument(
         "--url",
-        help="Test a specific URL (always runs; if --category/--priority specified, also runs matching tests from suite)"
+        help="Test a specific URL (always runs; if --category/--priority specified, also runs matching tests from suite)",
+    )
+    parser.add_argument("--interactive", action="store_true", help="Interactive mode with prompts")
+    parser.add_argument("--parallel", type=int, default=1, help="Number of parallel tests")
+    parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--category", choices=[c.value for c in TestCategory], help="Run only tests in category"
     )
     parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Interactive mode with prompts"
-    )
-    parser.add_argument(
-        "--parallel",
-        type=int,
-        default=1,
-        help="Number of parallel tests"
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose output"
-    )
-    parser.add_argument(
-        "--category",
-        choices=[c.value for c in TestCategory],
-        help="Run only tests in category"
-    )
-    parser.add_argument(
-        "--priority",
-        type=int,
-        choices=[1, 2, 3, 4],
-        help="Run only tests with priority <= value"
+        "--priority", type=int, choices=[1, 2, 3, 4], help="Run only tests with priority <= value"
     )
 
     args = parser.parse_args()
@@ -1722,7 +1805,7 @@ Examples:
         api_url=args.api_url,
         interactive=args.interactive,
         parallel=args.parallel,
-        verbose=args.verbose
+        verbose=args.verbose,
     )
 
     # Setup test suite or create custom URL test
@@ -1741,7 +1824,7 @@ Examples:
             timeout=90.0,
             expected_tiles_min=1,
             validation_level=ValidationLevel.THOROUGH,
-            tags={"custom", "user-provided"}
+            tags={"custom", "user-provided"},
         )
 
         # If no other filters specified, run ONLY the custom URL test
@@ -1754,14 +1837,12 @@ Examples:
             # Apply filters to the full suite (not including custom test yet)
             if args.category:
                 runner.test_cases = [
-                    tc for tc in runner.test_cases
-                    if tc.category.value == args.category
+                    tc for tc in runner.test_cases if tc.category.value == args.category
                 ]
 
             if args.priority:
                 runner.test_cases = [
-                    tc for tc in runner.test_cases
-                    if tc.priority.value <= args.priority
+                    tc for tc in runner.test_cases if tc.priority.value <= args.priority
                 ]
 
             # Always add custom test at the beginning (never filter it out)
@@ -1773,14 +1854,12 @@ Examples:
         # Filter tests if requested
         if args.category:
             runner.test_cases = [
-                tc for tc in runner.test_cases
-                if tc.category.value == args.category
+                tc for tc in runner.test_cases if tc.category.value == args.category
             ]
 
         if args.priority:
             runner.test_cases = [
-                tc for tc in runner.test_cases
-                if tc.priority.value <= args.priority
+                tc for tc in runner.test_cases if tc.priority.value <= args.priority
             ]
 
     # Run tests

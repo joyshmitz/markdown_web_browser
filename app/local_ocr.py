@@ -5,10 +5,8 @@ from __future__ import annotations
 import base64
 import logging
 import subprocess
-import sys
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import httpx
 
@@ -34,8 +32,11 @@ def detect_gpus() -> Optional[GPUInfo]:
     """
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version,cuda_version",
-             "--format=csv,noheader,nounits"],
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,driver_version,cuda_version",
+                "--format=csv,noheader,nounits",
+            ],
             capture_output=True,
             text=True,
             check=True,
@@ -102,9 +103,7 @@ class VLLMServer:
         gpu_info = detect_gpus()
         if gpu_info:
             self.tensor_parallel_size = tensor_parallel_size or gpu_info.count
-            LOGGER.info(
-                f"Detected {gpu_info.count} GPUs: {', '.join(gpu_info.names)}"
-            )
+            LOGGER.info(f"Detected {gpu_info.count} GPUs: {', '.join(gpu_info.names)}")
         else:
             self.tensor_parallel_size = 1
             LOGGER.warning("No GPUs detected, using CPU mode")
@@ -116,13 +115,21 @@ class VLLMServer:
             Popen object for the server process
         """
         cmd = [
-            "python", "-m", "vllm.entrypoints.openai.api_server",
-            "--model", self.model,
-            "--host", self.host,
-            "--port", str(self.port),
-            "--gpu-memory-utilization", str(self.gpu_memory_utilization),
-            "--max-model-len", str(self.max_model_len),
-            "--tensor-parallel-size", str(self.tensor_parallel_size),
+            "python",
+            "-m",
+            "vllm.entrypoints.openai.api_server",
+            "--model",
+            self.model,
+            "--host",
+            self.host,
+            "--port",
+            str(self.port),
+            "--gpu-memory-utilization",
+            str(self.gpu_memory_utilization),
+            "--max-model-len",
+            str(self.max_model_len),
+            "--tensor-parallel-size",
+            str(self.tensor_parallel_size),
             "--trust-remote-code",  # Required for olmOCR models
         ]
 
@@ -306,9 +313,7 @@ async def start_local_ocr_server(
         # Timeout
         process.terminate()
         process.wait()
-        raise TimeoutError(
-            f"vLLM server not ready after {ready_timeout} seconds"
-        )
+        raise TimeoutError(f"vLLM server not ready after {ready_timeout} seconds")
 
     return process
 

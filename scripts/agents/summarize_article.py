@@ -26,11 +26,17 @@ def summarize(
     api_base: str | None = typer.Option(None, help="Override API base URL."),
     profile: str | None = typer.Option(None, help="Browser profile id."),
     ocr_policy: str | None = typer.Option(None, help="OCR policy id."),
-    sentences: int = typer.Option(5, min=1, max=12, help="Number of sentences to include in the summary."),
+    sentences: int = typer.Option(
+        5, min=1, max=12, help="Number of sentences to include in the summary."
+    ),
     http2: bool = typer.Option(True, "--http2/--no-http2"),
     poll_interval: float = typer.Option(2.0, help="Seconds between polling /jobs/{id}."),
     timeout: float = typer.Option(300.0, help="Maximum seconds to wait for completion."),
-    reuse_session: bool = typer.Option(True, "--reuse-session/--no-reuse-session", help="Reuse the same HTTP client across submit/poll/fetch."),
+    reuse_session: bool = typer.Option(
+        True,
+        "--reuse-session/--no-reuse-session",
+        help="Reuse the same HTTP client across submit/poll/fetch.",
+    ),
     out: Path | None = typer.Option(
         None,
         "--out",

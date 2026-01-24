@@ -68,10 +68,7 @@ def load_blocklist(path: Path) -> BlocklistConfig:
     data = json.loads(path.read_text("utf-8"))
     global_selectors = tuple(data.get("global", []))
     domains_raw: Mapping[str, Iterable[str]] = data.get("domains", {})
-    domain_selectors = {
-        domain: tuple(selectors)
-        for domain, selectors in domains_raw.items()
-    }
+    domain_selectors = {domain: tuple(selectors) for domain, selectors in domains_raw.items()}
     return BlocklistConfig(
         version=data.get("version", "unknown"),
         global_selectors=global_selectors,
@@ -93,4 +90,3 @@ def _host_matches_pattern(host: str, pattern: str) -> bool:
         suffix = pattern[1:]
         return host.endswith(suffix)
     return host == pattern
-

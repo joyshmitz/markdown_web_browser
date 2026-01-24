@@ -182,7 +182,9 @@ def deduplicate_tile_overlap(
     )
 
 
-def _tiles_share_overlap(prev_tile: "TileSlice" | None, tile: "TileSlice" | None) -> tuple[bool, bool]:
+def _tiles_share_overlap(
+    prev_tile: "TileSlice" | None, tile: "TileSlice" | None
+) -> tuple[bool, bool]:
     """
     Check if tiles share pixel-level overlap via SHA256 hash comparison.
 

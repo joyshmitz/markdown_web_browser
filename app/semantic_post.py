@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import urlparse
-import asyncio
 import logging
 import time
 
 import httpx
 
-from app.settings import SemanticPostSettings
+
+@dataclass(slots=True)
+class SemanticPostSettings:
+    """Configuration for semantic post-processing."""
+
+    enabled: bool = False
+    endpoint: str = ""
+    model: str = ""
+    api_key: str = ""
+    timeout_ms: int = 30000
+    max_chars: int | None = None
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -86,7 +96,9 @@ async def apply_semantic_post(
     provider = _provider_label(settings.endpoint)
     start = time.perf_counter()
     try:
-        response = await requester(settings.endpoint, payload, headers, settings.timeout_ms / 1000.0)
+        response = await requester(
+            settings.endpoint, payload, headers, settings.timeout_ms / 1000.0
+        )
     except Exception as exc:  # pragma: no cover - network surface
         LOGGER.warning("Semantic post-processing failed for %s: %s", job_id, exc)
         summary = _build_summary(
@@ -186,7 +198,14 @@ def _manifest_excerpt(manifest: Any) -> Mapping[str, Any] | None:
     if not payload:
         return None
     excerpt: dict[str, Any] = {}
-    for key in ("url", "tiles_total", "warnings", "dom_assist_summary", "blocklist_hits", "validation_failures"):
+    for key in (
+        "url",
+        "tiles_total",
+        "warnings",
+        "dom_assist_summary",
+        "blocklist_hits",
+        "validation_failures",
+    ):
         value = payload.get(key)
         if value not in (None, "", []):
             excerpt[key] = value
@@ -218,4 +237,3 @@ def _safe_excerpt(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {key: value.get(key) for key in list(value.keys())[:5]}
     return value
-

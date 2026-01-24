@@ -55,10 +55,7 @@ def upsert_embeddings(
     connection = session.connection()
     for section in sections:
         if len(section.vector) != EMBEDDING_DIM:
-            msg = (
-                "section embedding length must match EMBEDDING_DIM; "
-                f"got {len(section.vector)}"
-            )
+            msg = f"section embedding length must match EMBEDDING_DIM; got {len(section.vector)}"
             raise ValueError(msg)
         payload = sqlite_vec.serialize_float32(list(section.vector))
         connection.exec_driver_sql(

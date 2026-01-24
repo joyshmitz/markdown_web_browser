@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """High-level CLI helpers for running the olmOCR pipeline."""
+
 from __future__ import annotations
 
 import csv
@@ -154,7 +155,9 @@ def _auto_tensor_parallel_size() -> int:
         count = len([gpu for gpu in visible.split(",") if gpu.strip()])
     else:
         try:
-            result = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["nvidia-smi", "-L"], capture_output=True, text=True, check=True
+            )
             count = len([line for line in result.stdout.splitlines() if line.strip()])
         except Exception:
             count = 1
@@ -239,7 +242,9 @@ def _base_from_server_url(server_url: str) -> str:
     return trimmed
 
 
-METRIC_REQUEST_RE = re.compile(r"vllm_engine_request_stats\{status=\"(?P<status>[^\"]+)\"\}\s+(?P<value>[0-9.]+)")
+METRIC_REQUEST_RE = re.compile(
+    r"vllm_engine_request_stats\{status=\"(?P<status>[^\"]+)\"\}\s+(?P<value>[0-9.]+)"
+)
 
 
 def _fetch_server_metrics(server_url: str) -> Optional[Tuple[float, float]]:
@@ -354,22 +359,46 @@ NOISY_SUBSTRINGS = [
 @app.command("show-env")
 def show_env() -> None:
     env = _build_env()
-    rows = [f"[bold]{k}[/bold]=[cyan]{v}[/cyan]" for k, v in env.items() if k in DEFAULT_ENV_OVERRIDES]
+    rows = [
+        f"[bold]{k}[/bold]=[cyan]{v}[/cyan]" for k, v in env.items() if k in DEFAULT_ENV_OVERRIDES
+    ]
     console.print(Panel("\n".join(rows), title="olmOCR CUDA environment"))
 
 
 @app.command(help="Run PDFs/images/manifests with tuned defaults.")
 def run(
-    workspace: Path = typer.Option(Path("./localworkspace"), help="Workspace directory for queue/results."),
+    workspace: Path = typer.Option(
+        Path("./localworkspace"), help="Workspace directory for queue/results."
+    ),
     pdf: List[Path] = typer.Option(..., help="PDFs, images, directories, or manifest .txt files."),
     markdown: bool = typer.Option(True, help="Emit markdown alongside structured output."),
-    workers: Optional[int] = typer.Option(None, help="Concurrent olmOCR workers (default 20, overridable via config).", show_default=False),
-    tensor_parallel_size: Optional[int] = typer.Option(None, help="Override tensor parallel degree (configurable).", show_default=False),
-    extra_args: Optional[str] = typer.Option(None, help="Extra args forwarded to `olmocr.pipeline`.", show_default=False),
-    server_url: Optional[str] = typer.Option(None, help="Reuse an existing OpenAI-compatible endpoint (configurable).", show_default=False),
-    server_model: Optional[str] = typer.Option(None, help="Model name to request on remote server (default 'olmocr').", show_default=False),
-    resume: Optional[bool] = typer.Option(None, help="Skip already-completed work items if done_flags exist (default true).", show_default=False),
-    visible_gpus: Optional[str] = typer.Option(None, help="Comma-separated GPU IDs (sets CUDA_VISIBLE_DEVICES).", show_default=False),
+    workers: Optional[int] = typer.Option(
+        None,
+        help="Concurrent olmOCR workers (default 20, overridable via config).",
+        show_default=False,
+    ),
+    tensor_parallel_size: Optional[int] = typer.Option(
+        None, help="Override tensor parallel degree (configurable).", show_default=False
+    ),
+    extra_args: Optional[str] = typer.Option(
+        None, help="Extra args forwarded to `olmocr.pipeline`.", show_default=False
+    ),
+    server_url: Optional[str] = typer.Option(
+        None,
+        help="Reuse an existing OpenAI-compatible endpoint (configurable).",
+        show_default=False,
+    ),
+    server_model: Optional[str] = typer.Option(
+        None, help="Model name to request on remote server (default 'olmocr').", show_default=False
+    ),
+    resume: Optional[bool] = typer.Option(
+        None,
+        help="Skip already-completed work items if done_flags exist (default true).",
+        show_default=False,
+    ),
+    visible_gpus: Optional[str] = typer.Option(
+        None, help="Comma-separated GPU IDs (sets CUDA_VISIBLE_DEVICES).", show_default=False
+    ),
 ) -> None:
     workspace = workspace.resolve()
     workspace.mkdir(parents=True, exist_ok=True)
@@ -377,9 +406,13 @@ def run(
     manifests_dir.mkdir(parents=True, exist_ok=True)
 
     config_defaults = _config_for("run")
-    workers = workers if workers is not None else config_defaults.get("workers", DEFAULT_RUN_WORKERS)
+    workers = (
+        workers if workers is not None else config_defaults.get("workers", DEFAULT_RUN_WORKERS)
+    )
     tensor_parallel_size = (
-        tensor_parallel_size if tensor_parallel_size is not None else config_defaults.get("tensor_parallel_size")
+        tensor_parallel_size
+        if tensor_parallel_size is not None
+        else config_defaults.get("tensor_parallel_size")
     )
     extra_args = extra_args if extra_args is not None else config_defaults.get("extra_args")
     server_url = server_url if server_url is not None else config_defaults.get("server_url")
@@ -420,7 +453,9 @@ def run(
             manifest = manifests_dir / f"{item.name}.txt"
             manifest.write_text("\n".join(str(f) for f in files))
             resolved_inputs.append(manifest)
-            logger.info("Expanded directory %s into manifest %s (%d files)", item, manifest, len(files))
+            logger.info(
+                "Expanded directory %s into manifest %s (%d files)", item, manifest, len(files)
+            )
         elif item.is_file() and item.suffix.lower() == ".txt":
             orig_lines = [line.strip() for line in item.read_text().splitlines() if line.strip()]
             lines = list(orig_lines)
@@ -428,7 +463,9 @@ def run(
                 filtered_lines = [line for line in lines if line not in completed_paths]
                 skipped = len(lines) - len(filtered_lines)
                 if skipped:
-                    console.print(f"Resume: skipping {skipped} entries already completed in manifest {item}")
+                    console.print(
+                        f"Resume: skipping {skipped} entries already completed in manifest {item}"
+                    )
                 lines = filtered_lines
             if not lines:
                 console.print(f"All entries in manifest {item} already completed; skipping.")
@@ -450,7 +487,9 @@ def run(
         console.print(f"Resume: skipped {skipped_inputs} standalone inputs already marked done.")
 
     if not resolved_inputs:
-        console.print("All inputs already completed according to the workspace done flags. Nothing to run.")
+        console.print(
+            "All inputs already completed according to the workspace done flags. Nothing to run."
+        )
         return
 
     env = _build_env()
@@ -473,7 +512,9 @@ def run(
             detected_server = normalized_user_server
             logger.info("Found reachable server %s (user-provided).", detected_server)
         else:
-            console.print(f"[yellow]Warning:[/yellow] Provided server {normalized_user_server} is unreachable; falling back to internal launch.")
+            console.print(
+                f"[yellow]Warning:[/yellow] Provided server {normalized_user_server} is unreachable; falling back to internal launch."
+            )
             normalized_user_server = None
 
     if not normalized_user_server:
@@ -510,7 +551,9 @@ def run(
     explicit_tp = tensor_parallel_size
     auto_tp = explicit_tp or _auto_tensor_parallel_size()
     if not use_external_server and explicit_tp is None and auto_tp > 1 and _is_wsl():
-        logger.warning("WSL detected—defaulting tensor-parallel-size to 1 to avoid NCCL issues. Use --tensor-parallel-size to override.")
+        logger.warning(
+            "WSL detected—defaulting tensor-parallel-size to 1 to avoid NCCL issues. Use --tensor-parallel-size to override."
+        )
         auto_tp = 1
 
     def build_cmd(tp_value: int) -> List[str]:
@@ -538,7 +581,10 @@ def run(
         and current_tp > 1
     )
     if can_retry:
-        logger.warning("olmOCR run failed with tensor-parallel-size=%d; retrying with 1. See olmocr-pipeline-debug.log for details.", current_tp)
+        logger.warning(
+            "olmOCR run failed with tensor-parallel-size=%d; retrying with 1. See olmocr-pipeline-debug.log for details.",
+            current_tp,
+        )
         current_tp = 1
         process = launch(current_tp, announce=False)
 
@@ -549,25 +595,51 @@ def run(
 @app.command(help="Process an image directory and emit .md files alongside the images.")
 def images(
     input_folder: Path = typer.Argument(..., help="Directory tree containing PNG/JPG files."),
-    workspace: Path = typer.Option(Path("./localworkspace/images"), help="Workspace for manifests/results."),
+    workspace: Path = typer.Option(
+        Path("./localworkspace/images"), help="Workspace for manifests/results."
+    ),
     markdown: bool = typer.Option(True, help="Keep markdown output enabled."),
-    workers: Optional[int] = typer.Option(None, help="Concurrent workers (default 12, overridable via config).", show_default=False),
-    tensor_parallel_size: Optional[int] = typer.Option(None, help="Override tensor parallel size (configurable).", show_default=False),
-    extra_args: Optional[str] = typer.Option(None, help="Advanced flags forwarded to the pipeline.", show_default=False),
-    server_url: Optional[str] = typer.Option(None, help="Existing server URL to reuse (configurable).", show_default=False),
-    server_model: Optional[str] = typer.Option(None, help="Model name to request on remote server (default 'olmocr').", show_default=False),
-    preconvert: Optional[bool] = typer.Option(None, help="Pre-convert images to PDFs in parallel before running (default True).", show_default=False),
-    resume: Optional[bool] = typer.Option(None, help="Skip already-completed images if done flags exist (default true).", show_default=False),
-    visible_gpus: Optional[str] = typer.Option(None, help="Comma-separated GPU IDs (sets CUDA_VISIBLE_DEVICES).", show_default=False),
+    workers: Optional[int] = typer.Option(
+        None, help="Concurrent workers (default 12, overridable via config).", show_default=False
+    ),
+    tensor_parallel_size: Optional[int] = typer.Option(
+        None, help="Override tensor parallel size (configurable).", show_default=False
+    ),
+    extra_args: Optional[str] = typer.Option(
+        None, help="Advanced flags forwarded to the pipeline.", show_default=False
+    ),
+    server_url: Optional[str] = typer.Option(
+        None, help="Existing server URL to reuse (configurable).", show_default=False
+    ),
+    server_model: Optional[str] = typer.Option(
+        None, help="Model name to request on remote server (default 'olmocr').", show_default=False
+    ),
+    preconvert: Optional[bool] = typer.Option(
+        None,
+        help="Pre-convert images to PDFs in parallel before running (default True).",
+        show_default=False,
+    ),
+    resume: Optional[bool] = typer.Option(
+        None,
+        help="Skip already-completed images if done flags exist (default true).",
+        show_default=False,
+    ),
+    visible_gpus: Optional[str] = typer.Option(
+        None, help="Comma-separated GPU IDs (sets CUDA_VISIBLE_DEVICES).", show_default=False
+    ),
 ) -> None:
     input_folder = input_folder.resolve()
     if not input_folder.is_dir():
         raise typer.BadParameter(f"{input_folder} is not a directory")
 
     config_defaults = _config_for("images")
-    workers = workers if workers is not None else config_defaults.get("workers", DEFAULT_IMAGE_WORKERS)
+    workers = (
+        workers if workers is not None else config_defaults.get("workers", DEFAULT_IMAGE_WORKERS)
+    )
     tensor_parallel_size = (
-        tensor_parallel_size if tensor_parallel_size is not None else config_defaults.get("tensor_parallel_size")
+        tensor_parallel_size
+        if tensor_parallel_size is not None
+        else config_defaults.get("tensor_parallel_size")
     )
     extra_args = extra_args if extra_args is not None else config_defaults.get("extra_args")
     server_url = server_url if server_url is not None else config_defaults.get("server_url")
@@ -596,7 +668,9 @@ def images(
     pdf_mapping: dict[Path, Path] = {}
     if preconvert and files:
         console.print(f"Pre-converting {len(files)} images to PDF (workers={preconvert_workers})…")
-        pdf_paths, pdf_mapping = _convert_images_parallel(files, input_folder, converted_root, preconvert_workers)
+        pdf_paths, pdf_mapping = _convert_images_parallel(
+            files, input_folder, converted_root, preconvert_workers
+        )
         manifest_paths = pdf_paths
         markdown_root = converted_root
     else:
@@ -608,12 +682,16 @@ def images(
         manifest_paths = [p for p in manifest_paths if str(p) not in completed_paths]
         if pdf_mapping:
             allowed = {str(p) for p in manifest_paths}
-            pdf_mapping = {pdf: original for pdf, original in pdf_mapping.items() if str(pdf) in allowed}
+            pdf_mapping = {
+                pdf: original for pdf, original in pdf_mapping.items() if str(pdf) in allowed
+            }
         skipped = before - len(manifest_paths)
         if skipped:
             console.print(f"Resume: skipping {skipped} already-completed image entries.")
     if not manifest_paths:
-        console.print("All requested images already completed according to done flags; nothing to do.")
+        console.print(
+            "All requested images already completed according to done flags; nothing to do."
+        )
         return
 
     manifest.write_text("\n".join(str(f) for f in manifest_paths))
@@ -651,7 +729,9 @@ def serve(
     port: int = typer.Option(DEFAULT_VLLM_PORT, help="Port for the OpenAI-compatible endpoint."),
     tensor_parallel_size: int = typer.Option(1, help="Tensor parallel degree."),
     workers: int = typer.Option(1, help="Data parallel degree (vLLM --data-parallel-size)."),
-    gpu_memory_utilization: Optional[float] = typer.Option(None, help="vLLM --gpu-memory-utilization."),
+    gpu_memory_utilization: Optional[float] = typer.Option(
+        None, help="vLLM --gpu-memory-utilization."
+    ),
     max_model_len: int = typer.Option(16384, help="vLLM --max-model-len."),
     extra_args: Optional[str] = typer.Option(None, help="Additional args to `vllm serve`."),
     model: str = typer.Option(DEFAULT_MODEL, help="Model tag to serve."),
@@ -680,7 +760,9 @@ def daemon(
     port: int = typer.Option(DEFAULT_VLLM_PORT, help="Port for the managed server."),
     tensor_parallel_size: int = typer.Option(1, help="Tensor parallel degree."),
     workers: int = typer.Option(1, help="Data parallel degree (vLLM --data-parallel-size)."),
-    gpu_memory_utilization: Optional[float] = typer.Option(None, help="vLLM --gpu-memory-utilization."),
+    gpu_memory_utilization: Optional[float] = typer.Option(
+        None, help="vLLM --gpu-memory-utilization."
+    ),
     max_model_len: int = typer.Option(16384, help="vLLM --max-model-len."),
     extra_args: Optional[str] = typer.Option(None, help="Additional args to `vllm serve`."),
     model: str = typer.Option(DEFAULT_MODEL, help="Model tag to serve."),
@@ -711,7 +793,9 @@ def daemon(
 
             if server_up:
                 if child and child.poll() is not None:
-                    console.print("Managed vLLM process exited but server is already running elsewhere; daemon will not restart it.")
+                    console.print(
+                        "Managed vLLM process exited but server is already running elsewhere; daemon will not restart it."
+                    )
                     child = None
             else:
                 if not child_alive:
@@ -736,7 +820,9 @@ def daemon(
 QUEUE_RE = re.compile(r"Queue remaining: (\d+)")
 
 
-def _run_with_filtered_output(cmd: List[str], env: dict, total_items: Optional[int]) -> subprocess.CompletedProcess:
+def _run_with_filtered_output(
+    cmd: List[str], env: dict, total_items: Optional[int]
+) -> subprocess.CompletedProcess:
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -761,7 +847,9 @@ def _run_with_filtered_output(cmd: List[str], env: dict, total_items: Optional[i
             suppressed_attempts += 1
             continue
         if "vllm server is ready." in stripped and suppressed_attempts:
-            console.print(f"vLLM server warmed up after ~{suppressed_attempts}s (startup polls suppressed).")
+            console.print(
+                f"vLLM server warmed up after ~{suppressed_attempts}s (startup polls suppressed)."
+            )
             suppressed_attempts = 0
         if any(pattern in stripped for pattern in NOISY_SUBSTRINGS):
             continue

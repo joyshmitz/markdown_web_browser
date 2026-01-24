@@ -7,20 +7,16 @@ No mocks - tests the real system with extremely detailed rich logging
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import httpx
 import json
-import os
 import sys
 import time
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from rich.console import Console, Group
-from rich.live import Live
 from rich.panel import Panel
 from rich.progress import (
     Progress,
@@ -28,16 +24,12 @@ from rich.progress import (
     TextColumn,
     BarColumn,
     TimeElapsedColumn,
-    TimeRemainingColumn,
 )
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.tree import Tree
 from rich.text import Text
-from rich.columns import Columns
-from rich.rule import Rule
 from rich import box
-from rich.layout import Layout
 from rich.align import Align
 from rich.markdown import Markdown
 
@@ -79,7 +71,10 @@ class IntegrationTestRunner:
         info_table.add_row("API Endpoint", self.api_url)
         info_table.add_row("OCR Server", self.settings.OLMOCR_SERVER)
         info_table.add_row("OCR Model", self.settings.OLMOCR_MODEL)
-        info_table.add_row("Python Version", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+        info_table.add_row(
+            "Python Version",
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        )
         info_table.add_row("Playwright Channel", self.settings.PLAYWRIGHT_CHANNEL)
         info_table.add_row("Cache Root", str(self.settings.CACHE_ROOT))
 
@@ -116,7 +111,9 @@ class IntegrationTestRunner:
 
                 response_table = Table(title="Response Details", box=box.SIMPLE)
                 response_table.add_column("Field", style="cyan")
-                response_table.add_column("Value", style="green" if response.status_code == 200 else "red")
+                response_table.add_column(
+                    "Value", style="green" if response.status_code == 200 else "red"
+                )
                 response_table.add_row("Status Code", str(response.status_code))
                 response_table.add_row("Response Time", f"{response.elapsed.total_seconds():.3f}s")
 
@@ -131,8 +128,8 @@ class IntegrationTestRunner:
                     "data": {
                         "status_code": response.status_code,
                         "response_time": response.elapsed.total_seconds(),
-                        "response": response_data
-                    }
+                        "response": response_data,
+                    },
                 }
 
                 # Success/failure message
@@ -145,7 +142,7 @@ class IntegrationTestRunner:
             error_panel = Panel(
                 Syntax(traceback.format_exc(), "python", theme="monokai"),
                 title="❌ Error Details",
-                border_style="red"
+                border_style="red",
             )
             self.console.print(error_panel)
             result["data"]["error"] = str(e)
@@ -153,14 +150,16 @@ class IntegrationTestRunner:
         self.console.print()
         return result["success"], result["data"]
 
-    async def test_job_submission(self, url: str = "https://example.com") -> Tuple[bool, Dict[str, Any]]:
+    async def test_job_submission(
+        self, url: str = "https://example.com"
+    ) -> Tuple[bool, Dict[str, Any]]:
         """Test 2: Job Submission and Processing"""
 
         self.console.rule("[bold blue]Test 2: Job Submission & Processing", style="blue")
 
         panel_content = Group(
             Text(f"URL to capture: {url}", style="cyan"),
-            Text("This test will submit a capture job and monitor its progress", style="dim")
+            Text("This test will submit a capture job and monitor its progress", style="dim"),
         )
         self.console.print(Panel(panel_content, title="📸 Capture Job", border_style="blue"))
 
@@ -178,16 +177,13 @@ class IntegrationTestRunner:
                 request_info = Panel(
                     Syntax(json.dumps(payload, indent=2), "json", theme="monokai"),
                     title="Request Payload",
-                    border_style="cyan"
+                    border_style="cyan",
                 )
                 self.console.print(request_info)
 
                 # Submit job
                 with self.console.status("[bold green]Submitting capture job..."):
-                    response = await client.post(
-                        f"{self.api_url}/jobs",
-                        json=payload
-                    )
+                    response = await client.post(f"{self.api_url}/jobs", json=payload)
 
                 if response.status_code not in [200, 202]:
                     raise Exception(f"Job submission failed: {response.status_code}")
@@ -195,7 +191,9 @@ class IntegrationTestRunner:
                 job_data = response.json()
                 job_id = job_data["id"]
 
-                self.console.print(f"✅ Job submitted successfully! ID: [bold cyan]{job_id}[/bold cyan]")
+                self.console.print(
+                    f"✅ Job submitted successfully! ID: [bold cyan]{job_id}[/bold cyan]"
+                )
 
                 # Monitor job progress with live display
                 job_complete = False
@@ -214,9 +212,7 @@ class IntegrationTestRunner:
 
                 with progress:
                     task = progress.add_task(
-                        "[cyan]Processing capture job...",
-                        total=100,
-                        status="INITIALIZING"
+                        "[cyan]Processing capture job...", total=100, status="INITIALIZING"
                     )
 
                     while not job_complete and poll_count < max_polls:
@@ -227,7 +223,9 @@ class IntegrationTestRunner:
                         status_response = await client.get(f"{self.api_url}/jobs/{job_id}")
 
                         if status_response.status_code != 200:
-                            raise Exception(f"Failed to get job status: {status_response.status_code}")
+                            raise Exception(
+                                f"Failed to get job status: {status_response.status_code}"
+                            )
 
                         job_status = status_response.json()
                         state = job_status.get("state", "UNKNOWN")
@@ -247,7 +245,10 @@ class IntegrationTestRunner:
                             progress.update(task, completed=100, status="✅ Complete!")
                             job_complete = True
                         elif state == "FAILED":
-                            progress.update(task, status=f"❌ Failed: {job_status.get('error', 'Unknown error')}")
+                            progress.update(
+                                task,
+                                status=f"❌ Failed: {job_status.get('error', 'Unknown error')}",
+                            )
                             break
                         else:
                             progress.update(task, status=f"State: {state}")
@@ -281,22 +282,22 @@ class IntegrationTestRunner:
                             "job_id": job_id,
                             "final_state": state,
                             "polls": poll_count,
-                            "manifest": manifest
-                        }
+                            "manifest": manifest,
+                        },
                     }
                 else:
                     self.console.print(f"\n[red]Job failed or timed out. State: {state}[/red]")
                     result["data"] = {
                         "job_id": job_id,
                         "final_state": state,
-                        "error": job_status.get("error", "Unknown error")
+                        "error": job_status.get("error", "Unknown error"),
                     }
 
         except Exception as e:
             error_panel = Panel(
                 Syntax(traceback.format_exc(), "python", theme="monokai"),
                 title="❌ Error Details",
-                border_style="red"
+                border_style="red",
             )
             self.console.print(error_panel)
             result["data"]["error"] = str(e)
@@ -345,22 +346,14 @@ class IntegrationTestRunner:
                                     name,
                                     "✅ Retrieved",
                                     f"{size:,} bytes",
-                                    "text/markdown" if name == "Markdown" else "application/json"
+                                    "text/markdown" if name == "Markdown" else "application/json",
                                 )
                             else:
                                 artifact_table.add_row(
-                                    name,
-                                    f"❌ Failed ({response.status_code})",
-                                    "-",
-                                    "-"
+                                    name, f"❌ Failed ({response.status_code})", "-", "-"
                                 )
                         except Exception as e:
-                            artifact_table.add_row(
-                                name,
-                                f"❌ Error",
-                                "-",
-                                str(e)[:30]
-                            )
+                            artifact_table.add_row(name, "❌ Error", "-", str(e)[:30])
 
                 self.console.print(artifact_table)
 
@@ -370,14 +363,16 @@ class IntegrationTestRunner:
                     md_panel = Panel(
                         Markdown(md_content + "\n\n*... (truncated)*"),
                         title="📝 Markdown Preview",
-                        border_style="green"
+                        border_style="green",
                     )
                     self.console.print(md_panel)
 
                 # Show links summary
                 if "Links JSON" in artifacts:
                     links_data = artifacts["Links JSON"]
-                    total_links = sum(len(domain["links"]) for domain in links_data.get("domains", []))
+                    total_links = sum(
+                        len(domain["links"]) for domain in links_data.get("domains", [])
+                    )
 
                     links_tree = Tree("🔗 Links Summary")
                     links_tree.add(f"Total Links: {total_links}")
@@ -389,15 +384,15 @@ class IntegrationTestRunner:
                     "success": len(artifacts) > 0,
                     "data": {
                         "artifacts_retrieved": list(artifacts.keys()),
-                        "total_size": sum(len(str(v)) for v in artifacts.values())
-                    }
+                        "total_size": sum(len(str(v)) for v in artifacts.values()),
+                    },
                 }
 
         except Exception as e:
             error_panel = Panel(
                 Syntax(traceback.format_exc(), "python", theme="monokai"),
                 title="❌ Error Details",
-                border_style="red"
+                border_style="red",
             )
             self.console.print(error_panel)
             result["data"]["error"] = str(e)
@@ -426,11 +421,11 @@ class IntegrationTestRunner:
 
                     # Parse some key metrics
                     metrics_data = {}
-                    for line in metrics_text.split('\n'):
-                        if line and not line.startswith('#'):
-                            parts = line.split(' ')
+                    for line in metrics_text.split("\n"):
+                        if line and not line.startswith("#"):
+                            parts = line.split(" ")
                             if len(parts) == 2:
-                                metric_name = parts[0].split('{')[0]
+                                metric_name = parts[0].split("{")[0]
                                 if metric_name not in metrics_data:
                                     try:
                                         metrics_data[metric_name] = float(parts[1])
@@ -461,12 +456,14 @@ class IntegrationTestRunner:
                         "success": True,
                         "data": {
                             "metrics_count": len(metrics_data),
-                            "sample_metrics": {k: v for k, v in list(metrics_data.items())[:5]}
-                        }
+                            "sample_metrics": {k: v for k, v in list(metrics_data.items())[:5]},
+                        },
                     }
                     self.console.print("✅ [green]Metrics endpoint is healthy![/green]")
                 else:
-                    self.console.print(f"⚠️ [yellow]Metrics endpoint returned {response.status_code}[/yellow]")
+                    self.console.print(
+                        f"⚠️ [yellow]Metrics endpoint returned {response.status_code}[/yellow]"
+                    )
                     result["data"]["status_code"] = response.status_code
 
         except Exception as e:
@@ -474,7 +471,7 @@ class IntegrationTestRunner:
             self.console.print(f"ℹ️ [yellow]Metrics endpoint not available: {str(e)}[/yellow]")
             result = {
                 "success": True,  # Not a critical failure
-                "data": {"note": "Metrics endpoint not configured"}
+                "data": {"note": "Metrics endpoint not configured"},
             }
 
         self.console.print()
@@ -499,31 +496,19 @@ class IntegrationTestRunner:
         for test_name, test_func, args in tests:
             try:
                 success, data = await test_func(*args)
-                all_results.append({
-                    "name": test_name,
-                    "success": success,
-                    "data": data
-                })
+                all_results.append({"name": test_name, "success": success, "data": data})
 
                 # Capture job ID for artifact test
                 if test_name == "Job Submission" and success:
                     job_id = data.get("job_id")
 
             except Exception as e:
-                all_results.append({
-                    "name": test_name,
-                    "success": False,
-                    "data": {"error": str(e)}
-                })
+                all_results.append({"name": test_name, "success": False, "data": {"error": str(e)}})
 
         # Run artifact test if we have a job ID
         if job_id:
             success, data = await self.test_artifact_retrieval(job_id)
-            all_results.append({
-                "name": "Artifact Retrieval",
-                "success": success,
-                "data": data
-            })
+            all_results.append({"name": "Artifact Retrieval", "success": success, "data": data})
 
         # Print summary
         self.print_summary(all_results)
@@ -564,7 +549,7 @@ class IntegrationTestRunner:
             summary_table.add_row(
                 result["name"],
                 f"[{status_color}]{status}[/{status_color}]",
-                " | ".join(details) if details else "Completed"
+                " | ".join(details) if details else "Completed",
             )
 
         self.console.print(summary_table)
@@ -576,40 +561,40 @@ class IntegrationTestRunner:
                     Text(f"Total Tests: {total_tests}", style="cyan"),
                     Text(f"Passed: {passed_tests}", style="green"),
                     Text(f"Failed: {failed_tests}", style="red" if failed_tests > 0 else "dim"),
-                    Text(f"Success Rate: {success_rate:.1f}%",
-                         style="green" if success_rate == 100 else "yellow" if success_rate >= 75 else "red"),
+                    Text(
+                        f"Success Rate: {success_rate:.1f}%",
+                        style="green"
+                        if success_rate == 100
+                        else "yellow"
+                        if success_rate >= 75
+                        else "red",
+                    ),
                     Text(f"Total Time: {total_time:.2f}s", style="blue"),
                 )
             ),
             title="📊 Overall Statistics",
-            border_style="magenta"
+            border_style="magenta",
         )
         self.console.print(stats_panel)
 
         # Final verdict
         if success_rate == 100:
             verdict = Panel(
-                Align.center(
-                    Text("🎉 ALL TESTS PASSED! 🎉", style="bold green")
-                ),
+                Align.center(Text("🎉 ALL TESTS PASSED! 🎉", style="bold green")),
                 border_style="green",
-                box=box.DOUBLE
+                box=box.DOUBLE,
             )
         elif success_rate >= 75:
             verdict = Panel(
-                Align.center(
-                    Text("⚠️ MOSTLY PASSED - Some Issues Found", style="bold yellow")
-                ),
+                Align.center(Text("⚠️ MOSTLY PASSED - Some Issues Found", style="bold yellow")),
                 border_style="yellow",
-                box=box.DOUBLE
+                box=box.DOUBLE,
             )
         else:
             verdict = Panel(
-                Align.center(
-                    Text("❌ TESTS FAILED - Critical Issues Found", style="bold red")
-                ),
+                Align.center(Text("❌ TESTS FAILED - Critical Issues Found", style="bold red")),
                 border_style="red",
-                box=box.DOUBLE
+                box=box.DOUBLE,
             )
 
         self.console.print(verdict)
@@ -631,6 +616,7 @@ async def main():
 
     # Parse arguments
     import argparse
+
     parser = argparse.ArgumentParser(description="Run integration tests for Markdown Web Browser")
     parser.add_argument("--api-url", default="http://localhost:8000", help="API base URL")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")

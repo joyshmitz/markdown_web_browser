@@ -119,7 +119,7 @@ def verify_api_key(
 
     statement = select(APIKey).where(
         APIKey.key_hash == key_hash,
-        APIKey.is_active.is_(True),
+        APIKey.is_active == True,  # noqa: E712
     )
 
     result = session.exec(statement).first()
@@ -137,8 +137,7 @@ def verify_api_key(
             last_used = last_used.replace(tzinfo=timezone.utc)
 
         should_update = (
-            last_used is None
-            or (now - last_used).total_seconds() > update_threshold_seconds
+            last_used is None or (now - last_used).total_seconds() > update_threshold_seconds
         )
 
         if should_update:

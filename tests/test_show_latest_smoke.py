@@ -77,7 +77,11 @@ def _write_pointer_files(
                     "runs": 5,
                     "budget_ms": 20000,
                     "capture_ms": {"p50": 11000, "p95": 15000, "p99": 18000},
-                    "total_ms": {"p50": 19000, "p95": 26000 if over_budget else 18000, "p99": 30000},
+                    "total_ms": {
+                        "p50": 19000,
+                        "p95": 26000 if over_budget else 18000,
+                        "p99": 30000,
+                    },
                     "ocr_ms": {"p50": 6000, "p95": 9000, "p99": 12000},
                     "seam_markers": {
                         "count": {"p50": 1, "p95": 2},
@@ -113,7 +117,12 @@ def _write_pointer_files(
                     "status": "within_budget",
                 }
             },
-            "aggregate": {"count": 5, "p50_total_ms": 18000, "p95_total_ms": 23000, "budget_breaches": 0},
+            "aggregate": {
+                "count": 5,
+                "p50_total_ms": 18000,
+                "p95_total_ms": 23000,
+                "budget_breaches": 0,
+            },
         }
         (root / "latest_slo_summary.json").write_text(json.dumps(slo_payload), encoding="utf-8")
 
@@ -183,7 +192,9 @@ def test_show_latest_smoke_weekly_missing_file(tmp_path: Path):
 
 def test_show_latest_smoke_slo_summary(tmp_path: Path):
     _write_pointer_files(tmp_path, include_weekly=False, include_slo=True)
-    result = _invoke_show(tmp_path, "--slo", "--no-summary", "--no-manifest", "--no-metrics", "--no-weekly")
+    result = _invoke_show(
+        tmp_path, "--slo", "--no-summary", "--no-manifest", "--no-metrics", "--no-weekly"
+    )
     assert result.exit_code == 0
     assert "SLO Summary" in result.output
     assert "| docs | 5 |" in result.output
@@ -298,7 +309,9 @@ def test_show_latest_smoke_json_without_metrics(tmp_path: Path):
 
 def test_show_latest_smoke_weekly_no_categories(tmp_path: Path):
     _write_pointer_files(tmp_path, include_weekly=True)
-    (tmp_path / "weekly_summary.json").write_text(json.dumps({"window_days": 7, "categories": []}), encoding="utf-8")
+    (tmp_path / "weekly_summary.json").write_text(
+        json.dumps({"window_days": 7, "categories": []}), encoding="utf-8"
+    )
     result = _invoke_show(tmp_path, "--weekly", "--no-summary", "--no-manifest", "--no-metrics")
     assert result.exit_code == 0
     assert "No category data recorded" in result.output

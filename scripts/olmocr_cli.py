@@ -103,7 +103,9 @@ def load_settings() -> CLISettings:
     return CLISettings(
         api_base_url=_required_config(config, "API_BASE_URL", default="http://localhost:8000"),
         mdwb_api_key=_config_value(config, "MDWB_API_KEY"),
-        ocr_server=_required_config(config, "OLMOCR_SERVER", default="https://ai2endpoints.cirrascale.ai/api"),
+        ocr_server=_required_config(
+            config, "OLMOCR_SERVER", default="https://ai2endpoints.cirrascale.ai/api"
+        ),
         ocr_model=_required_config(config, "OLMOCR_MODEL", default="olmOCR-2-7B-1025-FP8"),
         ocr_api_key=_config_value(config, "OLMOCR_API_KEY"),
         tiles_long_side=int(_required_config(config, "TILE_LONG_SIDE_PX", default="1288")),
@@ -299,7 +301,9 @@ def show_env() -> None:
 @app.command()
 def run(
     url: str = typer.Option(..., "--url", prompt=True, help="URL to capture."),
-    out_dir: Path = typer.Option(Path("benchmarks/runs"), "--out-dir", help="Directory to store artifacts."),
+    out_dir: Path = typer.Option(
+        Path("benchmarks/runs"), "--out-dir", help="Directory to store artifacts."
+    ),
     tiles_long_side: Optional[int] = typer.Option(None, help="Override tile longest side (px)."),
     overlap_px: Optional[int] = typer.Option(None, help="Override tile overlap in pixels."),
     concurrency: Optional[int] = typer.Option(None, help="Override OCR max concurrency."),
@@ -338,7 +342,9 @@ def run(
 
 @app.command()
 def bench(
-    url_file: Path = typer.Option(..., "--url-file", exists=True, readable=True, help="File with newline separated URLs."),
+    url_file: Path = typer.Option(
+        ..., "--url-file", exists=True, readable=True, help="File with newline separated URLs."
+    ),
     repeats: int = typer.Option(1, min=1, help="How many passes over the URL list."),
     shuffle: bool = typer.Option(False, "--shuffle/--no-shuffle", help="Shuffle URLs each repeat."),
     out_dir: Path = typer.Option(Path("benchmarks/bench"), help="Directory to store run outputs."),
@@ -348,7 +354,9 @@ def bench(
 ) -> None:
     """Run a batch of URLs and emit latency statistics."""
 
-    urls = [line.strip() for line in url_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    urls = [
+        line.strip() for line in url_file.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
     if not urls:
         raise typer.BadParameter("URL file is empty")
 

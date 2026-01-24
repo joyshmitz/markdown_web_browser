@@ -94,7 +94,11 @@ def test_store_records_profile_id(tmp_path: Path) -> None:
 def test_store_read_artifacts(tmp_path: Path) -> None:
     store = _storage(tmp_path)
     job_id = "run-artifacts"
-    store.allocate_run(job_id=job_id, url="https://example.com/art", started_at=datetime(2025, 11, 8, 6, 0, tzinfo=timezone.utc))
+    store.allocate_run(
+        job_id=job_id,
+        url="https://example.com/art",
+        started_at=datetime(2025, 11, 8, 6, 0, tzinfo=timezone.utc),
+    )
     tiles = [
         TileSlice(
             index=0,
@@ -118,7 +122,11 @@ def test_store_read_artifacts(tmp_path: Path) -> None:
 
 def test_store_persists_sweep_and_validation_metadata(tmp_path: Path) -> None:
     store = _storage(tmp_path)
-    store.allocate_run(job_id="run-123", url="https://example.com", started_at=datetime(2025, 11, 8, 8, 0, tzinfo=timezone.utc))
+    store.allocate_run(
+        job_id="run-123",
+        url="https://example.com",
+        started_at=datetime(2025, 11, 8, 8, 0, tzinfo=timezone.utc),
+    )
 
     manifest = {
         "environment": {
@@ -128,7 +136,12 @@ def test_store_persists_sweep_and_validation_metadata(tmp_path: Path) -> None:
             "playwright_channel": "cft",
             "playwright_version": "1.55.0",
             "browser_transport": "cdp",
-            "viewport": {"width": 1280, "height": 2000, "device_scale_factor": 2, "color_scheme": "light"},
+            "viewport": {
+                "width": 1280,
+                "height": 2000,
+                "device_scale_factor": 2,
+                "color_scheme": "light",
+            },
             "viewport_overlap_px": 120,
             "tile_overlap_px": 120,
             "scroll_settle_ms": 350,
@@ -190,7 +203,9 @@ def _sample_manifest_metadata() -> ManifestMetadata:
             playwright_channel="cft",
             playwright_version="1.55.0",
             browser_transport="cdp",
-            viewport=ViewportSettings(width=1280, height=2000, device_scale_factor=2, color_scheme="light"),
+            viewport=ViewportSettings(
+                width=1280, height=2000, device_scale_factor=2, color_scheme="light"
+            ),
             viewport_overlap_px=120,
             tile_overlap_px=120,
             scroll_settle_ms=350,
@@ -224,7 +239,9 @@ def _sample_manifest_metadata() -> ManifestMetadata:
                 attempts=1,
             )
         ],
-        ocr_quota=ManifestOCRQuota(limit=100000, used=6000, threshold_ratio=0.7, warning_triggered=False),
+        ocr_quota=ManifestOCRQuota(
+            limit=100000, used=6000, threshold_ratio=0.7, warning_triggered=False
+        ),
         seam_markers=[
             {"tile_index": 0, "position": "top", "hash": "ccc111"},
             {"tile_index": 1, "position": "bottom", "hash": "ddd222"},
@@ -235,7 +252,11 @@ def _sample_manifest_metadata() -> ManifestMetadata:
 def test_store_accepts_pydantic_manifest(tmp_path: Path) -> None:
     store = _storage(tmp_path)
     job_id = "run-meta"
-    store.allocate_run(job_id=job_id, url="https://example.com/docs", started_at=datetime(2025, 11, 8, 9, 0, tzinfo=timezone.utc))
+    store.allocate_run(
+        job_id=job_id,
+        url="https://example.com/docs",
+        started_at=datetime(2025, 11, 8, 9, 0, tzinfo=timezone.utc),
+    )
     metadata = _sample_manifest_metadata()
 
     manifest_path = store.write_manifest(job_id=job_id, manifest=metadata)
@@ -270,7 +291,11 @@ def test_store_accepts_pydantic_manifest(tmp_path: Path) -> None:
 def test_store_read_manifest_roundtrip(tmp_path: Path) -> None:
     store = _storage(tmp_path)
     job_id = "run-read"
-    store.allocate_run(job_id=job_id, url="https://example.org", started_at=datetime(2025, 11, 8, 9, 30, tzinfo=timezone.utc))
+    store.allocate_run(
+        job_id=job_id,
+        url="https://example.org",
+        started_at=datetime(2025, 11, 8, 9, 30, tzinfo=timezone.utc),
+    )
     manifest_dict = {
         "environment": {"cft_version": "chrome-131", "viewport": {"device_scale_factor": 2}},
         "timings": {"capture_ms": 1000},
@@ -287,11 +312,20 @@ def test_store_read_manifest_roundtrip(tmp_path: Path) -> None:
 def test_store_persists_ocr_batches_and_quota(tmp_path: Path) -> None:
     store = _storage(tmp_path)
     job_id = "run-ocr"
-    store.allocate_run(job_id=job_id, url="https://example.com/ocr", started_at=datetime(2025, 11, 8, 10, 0, tzinfo=timezone.utc))
+    store.allocate_run(
+        job_id=job_id,
+        url="https://example.com/ocr",
+        started_at=datetime(2025, 11, 8, 10, 0, tzinfo=timezone.utc),
+    )
     manifest = {
         "environment": {
             "cft_version": "chrome-130",
-            "viewport": {"width": 1280, "height": 2000, "device_scale_factor": 2, "color_scheme": "light"},
+            "viewport": {
+                "width": 1280,
+                "height": 2000,
+                "device_scale_factor": 2,
+                "color_scheme": "light",
+            },
         },
         "timings": {"capture_ms": 1800, "ocr_ms": 3600, "stitch_ms": 700},
         "ocr_batches": [

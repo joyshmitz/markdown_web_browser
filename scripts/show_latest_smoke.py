@@ -39,7 +39,9 @@ class SmokePaths:
         )
 
 
-app = typer.Typer(help="Inspect the latest smoke run outputs (set MDWB_SMOKE_ROOT to override paths).")
+app = typer.Typer(
+    help="Inspect the latest smoke run outputs (set MDWB_SMOKE_ROOT to override paths)."
+)
 
 
 def _ensure_pointer(paths: SmokePaths) -> str:
@@ -48,7 +50,9 @@ def _ensure_pointer(paths: SmokePaths) -> str:
         raise typer.Exit(1)
     value = paths.pointer.read_text(encoding="utf-8").strip()
     if not value:
-        typer.secho("latest.txt is empty; rerun the smoke or refresh pointers.", fg=typer.colors.RED)
+        typer.secho(
+            "latest.txt is empty; rerun the smoke or refresh pointers.", fg=typer.colors.RED
+        )
         raise typer.Exit(1)
     return value
 
@@ -155,7 +159,11 @@ def _print_weekly_summary(summary: dict[str, Any]) -> None:
         budget = entry.get("budget_ms")
         total_p95 = total.get("p95")
         status = "OK"
-        if isinstance(budget, (int, float)) and isinstance(total_p95, (int, float)) and total_p95 > budget:
+        if (
+            isinstance(budget, (int, float))
+            and isinstance(total_p95, (int, float))
+            and total_p95 > budget
+        ):
             status = "⚠️ over budget"
         typer.echo(
             "| {category} | {runs} | {budget} | {cap_p50}/{cap_p95} | {tot_p50}/{tot_p95} | {status} |".format(
@@ -232,7 +240,9 @@ def _print_slo_summary(summary: dict[str, Any]) -> None:
     if not categories:
         typer.secho("No SLO data recorded yet.", fg=typer.colors.YELLOW)
         return
-    typer.echo("\n| Category | Count | Budget (ms) | Capture p50/p95 | OCR p50/p95 | Total p50/p95 | Status |")
+    typer.echo(
+        "\n| Category | Count | Budget (ms) | Capture p50/p95 | OCR p50/p95 | Total p50/p95 | Status |"
+    )
     typer.echo("| --- | --- | --- | --- | --- | --- | --- |")
     for name, stats in categories.items():
         typer.echo(
@@ -267,12 +277,18 @@ def _print_slo_summary(summary: dict[str, Any]) -> None:
 @app.command()
 def show(
     summary: bool = typer.Option(True, help="Include the Markdown summary (if present)."),
-    manifest: bool = typer.Option(False, "--manifest/--no-manifest", help="Include manifest_index entries."),
+    manifest: bool = typer.Option(
+        False, "--manifest/--no-manifest", help="Include manifest_index entries."
+    ),
     limit: Optional[int] = typer.Option(10, help="Limit manifest rows (None = all)."),
-    metrics: bool = typer.Option(False, "--metrics/--no-metrics", help="Include aggregated metrics JSON."),
+    metrics: bool = typer.Option(
+        False, "--metrics/--no-metrics", help="Include aggregated metrics JSON."
+    ),
     weekly: bool = typer.Option(False, "--weekly/--no-weekly", help="Include weekly_summary data."),
     slo: bool = typer.Option(False, "--slo/--no-slo", help="Include latest_slo_summary.json data."),
-    root: Optional[Path] = typer.Option(None, "--root", help="Override MDWB_SMOKE_ROOT for this invocation."),
+    root: Optional[Path] = typer.Option(
+        None, "--root", help="Override MDWB_SMOKE_ROOT for this invocation."
+    ),
     json_output: bool = typer.Option(
         False,
         "--json/--no-json",
@@ -283,7 +299,9 @@ def show(
 
     paths = SmokePaths.from_root(root or _default_root())
     date_stamp = _ensure_pointer(paths)
-    payload: dict[str, Any] = {"run_date": date_stamp, "root": str(paths.root)} if json_output else {}
+    payload: dict[str, Any] = (
+        {"run_date": date_stamp, "root": str(paths.root)} if json_output else {}
+    )
 
     if not json_output:
         typer.echo(f"Latest smoke run: {date_stamp}")
@@ -388,10 +406,18 @@ def _collect_missing(paths: SmokePaths, *, require_weekly: bool, require_slo: bo
 
 @app.command()
 def check(
-    weekly: bool = typer.Option(True, "--weekly/--no-weekly", help="Require weekly_summary.json to exist."),
-    slo: bool = typer.Option(False, "--slo/--no-slo", help="Require latest_slo_summary.json to exist."),
-    root: Optional[Path] = typer.Option(None, "--root", help="Override MDWB_SMOKE_ROOT for this invocation."),
-    json_output: bool = typer.Option(False, "--json/--no-json", help="Emit JSON payload instead of human text."),
+    weekly: bool = typer.Option(
+        True, "--weekly/--no-weekly", help="Require weekly_summary.json to exist."
+    ),
+    slo: bool = typer.Option(
+        False, "--slo/--no-slo", help="Require latest_slo_summary.json to exist."
+    ),
+    root: Optional[Path] = typer.Option(
+        None, "--root", help="Override MDWB_SMOKE_ROOT for this invocation."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json/--no-json", help="Emit JSON payload instead of human text."
+    ),
 ) -> None:
     """Verify that the latest smoke pointer files exist (for CI/dashboards)."""
 

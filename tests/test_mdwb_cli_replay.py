@@ -34,7 +34,9 @@ class StubClient:
 
 
 def _fake_settings():
-    return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def _monkeypatch_client(monkeypatch, response: StubResponse):  # noqa: ANN001

@@ -8,7 +8,9 @@ from typing import Optional
 import typer
 import uvicorn
 
-app = typer.Typer(help="Run the Markdown Web Browser FastAPI app with uvicorn or Granian.", add_completion=False)
+app = typer.Typer(
+    help="Run the Markdown Web Browser FastAPI app with uvicorn or Granian.", add_completion=False
+)
 
 
 def _env_str(key: str, default: str) -> str:
@@ -52,10 +54,14 @@ def _granian_log_level(value: str):  # type: ignore[no-untyped-def]
 
 @app.callback(invoke_without_command=True)
 def serve(  # type: ignore[no-untyped-def]
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server implementation (uvicorn or granian)."),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server implementation (uvicorn or granian)."
+    ),
     host: Optional[str] = typer.Option(None, "--host", help="Bind host."),
     port: Optional[int] = typer.Option(None, "--port", help="Bind port."),
-    app_path: Optional[str] = typer.Option(None, "--app", help="ASGI import path (default app.main:app)."),
+    app_path: Optional[str] = typer.Option(
+        None, "--app", help="ASGI import path (default app.main:app)."
+    ),
     reload: Optional[bool] = typer.Option(None, "--reload/--no-reload", help="Enable auto-reload."),
     workers: Optional[int] = typer.Option(None, "--workers", help="Worker processes."),
     log_level: Optional[str] = typer.Option(None, "--log-level", help="Log level."),

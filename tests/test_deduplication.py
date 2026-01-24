@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 
 from app.dedup import (
-    DeduplicationResult,
     deduplicate_tile_overlap,
     _find_exact_boundary_match,
     _find_overlap_fuzzy,
@@ -247,9 +245,7 @@ class TestDeduplicateTileOverlap:
         prev_tile = create_test_tile(0, bottom_hash="match123")
         curr_tile = create_test_tile(1, top_hash="match123")
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         assert info.lines_removed == 2
         assert info.method == "exact"
@@ -263,9 +259,7 @@ class TestDeduplicateTileOverlap:
         prev_tile = create_test_tile(0, bottom_hash="match123")
         curr_tile = create_test_tile(1, top_hash="match123")
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         assert info.lines_removed == 2
         assert info.method in ["exact", "sequence", "fuzzy"]  # Any tier can match
@@ -278,9 +272,7 @@ class TestDeduplicateTileOverlap:
         prev_tile = create_test_tile(0, bottom_hash="abc123")
         curr_tile = create_test_tile(1, top_hash="def456")  # Different!
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         assert info.lines_removed == 0
         assert info.method == "no_overlap"
@@ -331,9 +323,7 @@ class TestDeduplicateTileOverlap:
         prev_tile = create_test_tile(0, overlap_px=10, bottom_hash="match123")  # Small overlap
         curr_tile = create_test_tile(1, overlap_px=10, top_hash="match123")
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         # Estimated overlap from 10px = 3 lines minimum
         # Max removable = 3 * 3 = 9 lines
@@ -349,9 +339,7 @@ class TestDeduplicateTileOverlap:
         prev_tile = create_test_tile(0, bottom_hash="match123")
         curr_tile = create_test_tile(1, top_hash="match123")
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         assert info.lines_removed == 2
         assert "# Heading" not in result_lines
@@ -364,9 +352,7 @@ class TestDeduplicateTileOverlap:
         prev_tile = create_test_tile(0, bottom_hash="match123")
         curr_tile = create_test_tile(1, top_hash="match123")
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         assert info.lines_removed == 2
         assert result_lines == ["- List item 3"]
@@ -383,9 +369,7 @@ class TestTierFallback:
         prev_tile = create_test_tile(0, bottom_hash="match123")
         curr_tile = create_test_tile(1, top_hash="match123")
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         # Should match via sequence or fuzzy, not exact
         assert info.lines_removed == 2
@@ -430,9 +414,7 @@ class TestTierFallback:
         prev_tile = create_test_tile(0, bottom_hash="match123")
         curr_tile = create_test_tile(1, top_hash="match123")
 
-        result_lines, info = deduplicate_tile_overlap(
-            prev_lines, curr_lines, prev_tile, curr_tile
-        )
+        result_lines, info = deduplicate_tile_overlap(prev_lines, curr_lines, prev_tile, curr_tile)
 
         # No confident match found
         assert info.lines_removed == 0

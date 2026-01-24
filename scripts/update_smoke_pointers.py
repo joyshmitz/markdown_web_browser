@@ -13,7 +13,9 @@ import typer
 
 from scripts.compute_slo import compute_slo_summary, load_budgets, write_prom_metrics
 
-app = typer.Typer(help="Copy summary/manifest/metrics from a run directory into the latest_* pointers.")
+app = typer.Typer(
+    help="Copy summary/manifest/metrics from a run directory into the latest_* pointers."
+)
 
 
 def _copy_file(src: Path, dest: Path, *, required: bool) -> None:
@@ -67,7 +69,9 @@ def _sync_prom_export(prom_path: Path) -> None:
 
 @app.command()
 def update(
-    source: Path = typer.Argument(..., help="Run directory containing summary/manifest/metrics files."),
+    source: Path = typer.Argument(
+        ..., help="Run directory containing summary/manifest/metrics files."
+    ),
     root: Path | None = typer.Option(None, help="Pointer root (defaults to MDWB_SMOKE_ROOT)."),
     weekly_source: Path = typer.Option(
         None,
@@ -151,9 +155,7 @@ def update(
         if dest_prom.exists():
             _sync_prom_export(dest_prom)
 
-    typer.secho(
-        f"Updated pointers under {root_path} using run {source}", fg=typer.colors.GREEN
-    )
+    typer.secho(f"Updated pointers under {root_path} using run {source}", fg=typer.colors.GREEN)
 
 
 if __name__ == "__main__":  # pragma: no cover

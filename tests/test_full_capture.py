@@ -35,7 +35,7 @@ async def test_full_capture():
         device_scale_factor=2.0,
         color_scheme="light",
         lang="en-US",
-        timezone="America/New_York"
+        timezone="America/New_York",
     )
 
     # Ensure output directory exists
@@ -45,7 +45,7 @@ async def test_full_capture():
         print(f"Capturing {config.url}...")
         result = await capture_tiles(config)
 
-        print(f"\n✅ Capture successful!")
+        print("\n✅ Capture successful!")
         print(f"Tiles generated: {len(result.tiles)}")
         print(f"User agent: {result.user_agent}")
         print(f"DOM snapshot size: {len(result.dom_snapshot) if result.dom_snapshot else 0} bytes")
@@ -63,6 +63,7 @@ async def test_full_capture():
     except Exception as e:
         print(f"\n❌ Capture failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

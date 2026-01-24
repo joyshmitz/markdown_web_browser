@@ -59,7 +59,9 @@ def _monkeypatch_client(monkeypatch, *, get=None, post=None, delete=None):  # no
 
 
 def _fake_settings():
-    return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def test_jobs_webhooks_list_success(monkeypatch):
@@ -230,10 +232,21 @@ def test_delete_helper_builds_payload_for_url():
     assert response.status_code == 200
     assert payload == {"url": "https://example.com/hook"}
     assert client.calls[-1][1] == {"url": "https://example.com/hook"}
+
+
 def test_jobs_webhooks_add_json(monkeypatch):
     _monkeypatch_client(
         monkeypatch,
-        post=[StubResponse(200, payload={"job_id": "job123", "url": "https://example.com/callback", "events": ["DONE"]})],
+        post=[
+            StubResponse(
+                200,
+                payload={
+                    "job_id": "job123",
+                    "url": "https://example.com/callback",
+                    "events": ["DONE"],
+                },
+            )
+        ],
     )
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
 
@@ -244,6 +257,8 @@ def test_jobs_webhooks_add_json(monkeypatch):
 
     assert result.exit_code == 0
     assert '"status": "ok"' in result.output
+
+
 def test_jobs_webhooks_add_json_error(monkeypatch):
     _monkeypatch_client(monkeypatch, post=[StubResponse(404, payload={"detail": "job missing"})])
     monkeypatch.setattr(mdwb_cli, "_resolve_settings", lambda base: _fake_settings())
@@ -255,6 +270,8 @@ def test_jobs_webhooks_add_json_error(monkeypatch):
 
     assert result.exit_code != 0
     assert '"status": "error"' in result.output
+
+
 def test_jobs_webhooks_list_json(monkeypatch):
     _monkeypatch_client(
         monkeypatch,

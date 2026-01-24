@@ -78,10 +78,16 @@ def _write_summary(path: Path, payload: dict[str, Any]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Emit a JSON summary from a pytest JUnit XML report.")
-    parser.add_argument("--junit", required=True, help="Path to the JUnit XML file produced by pytest.")
+    parser = argparse.ArgumentParser(
+        description="Emit a JSON summary from a pytest JUnit XML report."
+    )
+    parser.add_argument(
+        "--junit", required=True, help="Path to the JUnit XML file produced by pytest."
+    )
     parser.add_argument("--summary", required=True, help="Destination path for the JSON summary.")
-    parser.add_argument("--exit-code", required=True, type=int, help="Exit code returned by pytest.")
+    parser.add_argument(
+        "--exit-code", required=True, type=int, help="Exit code returned by pytest."
+    )
     args = parser.parse_args(argv)
 
     junit_path = Path(args.junit)
@@ -93,7 +99,9 @@ def main(argv: list[str] | None = None) -> int:
     failures = summary["failures"] + summary["errors"]
     print(f"Pytest summary ({status}): {failures} failures out of {total} tests — {summary_path}")
     if summary.get("failed_tests"):
-        preview = ", ".join(filter(None, (case.get("name") for case in summary["failed_tests"][:5])))
+        preview = ", ".join(
+            filter(None, (case.get("name") for case in summary["failed_tests"][:5]))
+        )
         print(f"Failing tests: {preview}")
     return 0
 

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional, Set
+from collections.abc import Callable
+from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -178,7 +178,7 @@ class CrawlOrchestrator:
     async def start_crawl(
         self,
         config: CrawlConfig,
-        capture_fn: Optional[callable] = None,
+        capture_fn: Callable[[str], Any] | None = None,
     ) -> str:
         """Start a new crawl job.
 
@@ -224,7 +224,7 @@ class CrawlOrchestrator:
     async def _run_crawl(
         self,
         crawl_id: str,
-        capture_fn: Optional[callable] = None,
+        capture_fn: Callable[[str], Any] | None = None,
     ) -> None:
         """Execute the crawl (runs in background).
 

@@ -1,1 +1,1 @@
-print('Paths', __file__)
+print("Paths", __file__)

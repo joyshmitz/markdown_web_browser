@@ -13,7 +13,9 @@ runner = CliRunner()
 
 
 class StubResponse:
-    def __init__(self, status_code: int, payload: dict[str, Any] | None = None, text: str = "") -> None:
+    def __init__(
+        self, status_code: int, payload: dict[str, Any] | None = None, text: str = ""
+    ) -> None:
         self.status_code = status_code
         self._payload = payload or {}
         self.text = text
@@ -36,7 +38,9 @@ class StubClient:
 
 
 def _fake_settings():
-    return mdwb_cli.APISettings(base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl"))
+    return mdwb_cli.APISettings(
+        base_url="http://localhost", api_key=None, warning_log_path=Path("ops/warnings.jsonl")
+    )
 
 
 def _patch_client_ctx(monkeypatch, stub):
@@ -53,7 +57,13 @@ def test_embeddings_search_pretty(monkeypatch):
         payload={
             "total_sections": 10,
             "matches": [
-                {"section_id": "s1", "tile_start": 0, "tile_end": 3, "similarity": 0.91, "distance": 0.09},
+                {
+                    "section_id": "s1",
+                    "tile_start": 0,
+                    "tile_end": 3,
+                    "similarity": 0.91,
+                    "distance": 0.09,
+                },
             ],
         },
     )

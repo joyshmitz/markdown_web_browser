@@ -192,7 +192,9 @@ def _summarize_seam_usage(events: Any, *, sample_limit: int = 3) -> dict[str, An
     }
 
 
-def summarize_dom_assists(entries: Sequence[Any] | None, *, tiles_total: int | None = None) -> dict[str, Any] | None:
+def summarize_dom_assists(
+    entries: Sequence[Any] | None, *, tiles_total: int | None = None
+) -> dict[str, Any] | None:
     if not entries:
         return None
     normalized: list[dict[str, Any]] = []

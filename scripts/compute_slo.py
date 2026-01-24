@@ -35,7 +35,9 @@ def _percentile(values: Iterable[int], percentile: float) -> int | None:
     return int(round(interpolated))
 
 
-def _extract_timings(entry: Mapping[str, Any]) -> tuple[int | None, int | None, int | None, int | None]:
+def _extract_timings(
+    entry: Mapping[str, Any],
+) -> tuple[int | None, int | None, int | None, int | None]:
     timings = entry.get("timings") or {}
     capture = _coerce_int(entry.get("capture_ms") or timings.get("capture_ms"))
     ocr = _coerce_int(entry.get("ocr_ms") or timings.get("ocr_ms"))
@@ -101,7 +103,9 @@ def compute_slo_summary(
                 stats[key].append(value)
                 if key == "total_ms":
                     aggregate_totals.append(value)
-        budget = _coerce_int(entry.get("budget_ms")) or stats.get("budget_ms") or budgets.get(category)
+        budget = (
+            _coerce_int(entry.get("budget_ms")) or stats.get("budget_ms") or budgets.get(category)
+        )
         if budget is not None:
             stats["budget_ms"] = budget
             if total is not None and total > budget:
@@ -155,7 +159,9 @@ def compute_slo_summary(
         "budget_breach_ratio": aggregate_ratio,
     }
     breach_ratio = float(aggregate_summary.get("budget_breach_ratio") or 0.0)
-    aggregate_summary["status"] = ("within_budget" if breach_ratio <= 0.01 else "breached") if total_entries else "no_data"
+    aggregate_summary["status"] = (
+        ("within_budget" if breach_ratio <= 0.01 else "breached") if total_entries else "no_data"
+    )
 
     return {
         "categories": categories_summary,
@@ -208,7 +214,9 @@ def write_prom_metrics(summary: Mapping[str, Any], output_path: Path) -> None:
         "# HELP mdwb_slo_overall_status Whether the overall SLO is within budget (1=yes)",
         "# TYPE mdwb_slo_overall_status gauge",
     )
-    _format_metric("mdwb_slo_overall_status", None, 1 if summary.get("status") == "within_budget" else 0)
+    _format_metric(
+        "mdwb_slo_overall_status", None, 1 if summary.get("status") == "within_budget" else 0
+    )
 
     _metric(
         "# HELP mdwb_slo_aggregate_budget_breach_ratio Aggregate budget breach ratio across all categories",
@@ -226,12 +234,18 @@ def write_prom_metrics(summary: Mapping[str, Any], output_path: Path) -> None:
 
 @app.command()
 def main(
-    root: Path = typer.Option(Path("benchmarks/production"), help="Directory containing manifest pointers."),
-    manifest: Path | None = typer.Option(None, help="Path to manifest index JSON (defaults to ROOT/latest_manifest_index.json)."),
+    root: Path = typer.Option(
+        Path("benchmarks/production"), help="Directory containing manifest pointers."
+    ),
+    manifest: Path | None = typer.Option(
+        None, help="Path to manifest index JSON (defaults to ROOT/latest_manifest_index.json)."
+    ),
     budget_file: Path | None = typer.Option(
         Path("benchmarks/production_set.json"), help="Budget definition file (PLAN §22)."
     ),
-    out: Path | None = typer.Option(None, help="Optional output file; stdout is used when omitted."),
+    out: Path | None = typer.Option(
+        None, help="Optional output file; stdout is used when omitted."
+    ),
     pretty: bool = typer.Option(True, help="Emit human-readable JSON when true."),
     prom_output: Path | None = typer.Option(
         None,

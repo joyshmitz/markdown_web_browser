@@ -65,7 +65,9 @@ def test_replay_missing_url(monkeypatch):
 
 def test_replay_job_manager_error(monkeypatch):
     manifest = {"url": "https://example.com"}
-    stub = StubReplayManager(snapshot=make_snapshot("job-y", manifest["url"]), error=ValueError("boom"))
+    stub = StubReplayManager(
+        snapshot=make_snapshot("job-y", manifest["url"]), error=ValueError("boom")
+    )
     client = get_client(monkeypatch, stub)
 
     response = client.post("/replay", json={"manifest": manifest})

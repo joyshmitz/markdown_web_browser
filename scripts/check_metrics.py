@@ -21,7 +21,11 @@ def _load_config() -> DecoupleConfig:
     if env_path.exists():
         target = env_path
     else:
-        fallback = env_path.with_suffix(env_path.suffix + ".example") if env_path.suffix else Path(".env.example")
+        fallback = (
+            env_path.with_suffix(env_path.suffix + ".example")
+            if env_path.suffix
+            else Path(".env.example")
+        )
         target = fallback if fallback.exists() else env_path
     return DecoupleConfig(RepositoryEnv(str(target)))
 
@@ -164,7 +168,9 @@ def run_check(
                     raw = weekly_result.get("failures") or []
                     if isinstance(raw, list):
                         failures = [str(line) for line in raw]
-                message = "[FAIL] Weekly SLO violations:\n" + "\n".join(f"- {line}" for line in failures or ["unknown"])
+                message = "[FAIL] Weekly SLO violations:\n" + "\n".join(
+                    f"- {line}" for line in failures or ["unknown"]
+                )
                 errors.append(message)
                 if not json_output:
                     typer.echo(message)

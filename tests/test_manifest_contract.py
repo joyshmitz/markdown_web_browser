@@ -18,7 +18,9 @@ def test_manifest_metadata_accepts_blocklist_and_warnings() -> None:
             playwright_channel="cft",
             playwright_version="1.55.0",
             browser_transport="cdp",
-            viewport=ViewportSettings(width=1280, height=2000, device_scale_factor=2, color_scheme="light"),
+            viewport=ViewportSettings(
+                width=1280, height=2000, device_scale_factor=2, color_scheme="light"
+            ),
             viewport_overlap_px=120,
             tile_overlap_px=120,
             scroll_settle_ms=350,
@@ -59,7 +61,9 @@ def test_manifest_metadata_accepts_blocklist_and_warnings() -> None:
                 attempts=1,
             )
         ],
-        ocr_quota=ManifestOCRQuota(limit=500000, used=200000, threshold_ratio=0.7, warning_triggered=False),
+        ocr_quota=ManifestOCRQuota(
+            limit=500000, used=200000, threshold_ratio=0.7, warning_triggered=False
+        ),
         dom_assists=[
             {
                 "tile_index": 0,

@@ -28,7 +28,7 @@ def _reset_quota_tracker_fixture() -> Iterator[None]:
 def create_real_test_image(width: int = 1280, height: int = 720, text: str = "Test") -> bytes:
     """Create a real PNG image with text for testing."""
     # Create white image
-    img = Image.new('RGB', (width, height), color='white')
+    img = Image.new("RGB", (width, height), color="white")
     draw = ImageDraw.Draw(img)
 
     # Try to use a system font, fall back to default if not available
@@ -58,13 +58,13 @@ def create_real_test_image(width: int = 1280, height: int = 720, text: str = "Te
             font = ImageFont.load_default()
 
     # Add some text
-    draw.text((50, 50), text, fill='black', font=font)
-    draw.text((50, 150), "This is a real test image", fill='black', font=font)
-    draw.text((50, 250), "Generated for testing OCR", fill='black', font=font)
+    draw.text((50, 50), text, fill="black", font=font)
+    draw.text((50, 150), "This is a real test image", fill="black", font=font)
+    draw.text((50, 250), "Generated for testing OCR", fill="black", font=font)
 
     # Convert to PNG bytes
     img_bytes = io.BytesIO()
-    img.save(img_bytes, format='PNG')
+    img.save(img_bytes, format="PNG")
     img_bytes.seek(0)  # Important: seek to beginning
     return img_bytes.getvalue()
 
@@ -79,16 +79,10 @@ async def test_real_ocr_api_single_image():
     test_image = create_real_test_image(text="Hello OCR API")
 
     # Create OCR request
-    request = OCRRequest(
-        tile_id="test_tile_001",
-        tile_bytes=test_image
-    )
+    request = OCRRequest(tile_id="test_tile_001", tile_bytes=test_image)
 
     # Submit to real OCR API
-    result = await submit_tiles(
-        requests=[request],
-        settings=settings
-    )
+    result = await submit_tiles(requests=[request], settings=settings)
 
     # Verify real response
     assert result.telemetry is not None
@@ -113,17 +107,11 @@ async def test_real_ocr_api_multiple_images():
     # Create multiple real test images
     requests = []
     for i in range(3):
-        test_image = create_real_test_image(text=f"Page {i+1}")
-        requests.append(OCRRequest(
-            tile_id=f"tile_{i:03d}",
-            tile_bytes=test_image
-        ))
+        test_image = create_real_test_image(text=f"Page {i + 1}")
+        requests.append(OCRRequest(tile_id=f"tile_{i:03d}", tile_bytes=test_image))
 
     # Submit to real OCR API
-    result = await submit_tiles(
-        requests=requests,
-        settings=settings
-    )
+    result = await submit_tiles(requests=requests, settings=settings)
 
     # Verify real response
     assert result.telemetry is not None
@@ -159,15 +147,9 @@ async def test_real_ocr_api_with_actual_webpage_screenshot():
             await browser.close()
 
     # Submit real screenshot to OCR
-    request = OCRRequest(
-        tile_id="real_webpage_001",
-        tile_bytes=screenshot_bytes
-    )
+    request = OCRRequest(tile_id="real_webpage_001", tile_bytes=screenshot_bytes)
 
-    result = await submit_tiles(
-        requests=[request],
-        settings=settings
-    )
+    result = await submit_tiles(requests=[request], settings=settings)
 
     # Verify real response
     assert result.telemetry is not None
@@ -189,16 +171,10 @@ async def test_real_ocr_api_error_handling():
     # Create an invalid image (too small, might cause issues)
     tiny_image = create_real_test_image(width=1, height=1)
 
-    request = OCRRequest(
-        tile_id="tiny_tile",
-        tile_bytes=tiny_image
-    )
+    request = OCRRequest(tile_id="tiny_tile", tile_bytes=tiny_image)
 
     # Submit to real OCR API - might fail or return empty
-    result = await submit_tiles(
-        requests=[request],
-        settings=settings
-    )
+    result = await submit_tiles(requests=[request], settings=settings)
 
     # Should handle gracefully even with weird input
     assert result.telemetry is not None
@@ -213,21 +189,11 @@ async def test_real_ocr_api_concurrent_requests():
     # Create multiple images for concurrent processing
     requests = []
     for i in range(5):
-        test_image = create_real_test_image(
-            width=1280,
-            height=720,
-            text=f"Concurrent Test {i}"
-        )
-        requests.append(OCRRequest(
-            tile_id=f"concurrent_{i:03d}",
-            tile_bytes=test_image
-        ))
+        test_image = create_real_test_image(width=1280, height=720, text=f"Concurrent Test {i}")
+        requests.append(OCRRequest(tile_id=f"concurrent_{i:03d}", tile_bytes=test_image))
 
     # Submit all at once - tests real concurrency handling
-    result = await submit_tiles(
-        requests=requests,
-        settings=settings
-    )
+    result = await submit_tiles(requests=requests, settings=settings)
 
     # Verify all were processed
     assert result.telemetry is not None

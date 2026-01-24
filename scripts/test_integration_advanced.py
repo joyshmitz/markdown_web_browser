@@ -7,43 +7,25 @@ Tests the complete Markdown Web Browser pipeline with extreme detail
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import httpx
-import json
 import sys
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from enum import Enum
 
-from rich.console import Console, Group, RenderableType
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-    MofNCompleteColumn,
-)
-from rich.syntax import Syntax
 from rich.table import Table
-from rich.tree import Tree
 from rich.text import Text
-from rich.columns import Columns
 from rich.rule import Rule
 from rich import box
 from rich.layout import Layout
 from rich.align import Align
-from rich.markdown import Markdown
-from rich.traceback import Traceback
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -53,6 +35,7 @@ from app.settings import get_settings
 
 class TestStage(Enum):
     """Test pipeline stages."""
+
     INIT = "Initializing"
     BROWSER_START = "Starting Browser"
     CAPTURE = "Capturing Page"
@@ -67,6 +50,7 @@ class TestStage(Enum):
 @dataclass
 class PipelineEvent:
     """Represents an event in the pipeline."""
+
     timestamp: float
     stage: TestStage
     message: str
@@ -77,6 +61,7 @@ class PipelineEvent:
 @dataclass
 class TestCase:
     """Represents a test case."""
+
     name: str
     url: str
     description: str
@@ -95,14 +80,12 @@ class PipelineMonitor:
         self.metrics: Dict[str, Any] = {}
         self.start_time = time.time()
 
-    def add_event(self, stage: TestStage, message: str, data: Dict[str, Any] = None, level: str = "info"):
+    def add_event(
+        self, stage: TestStage, message: str, data: Dict[str, Any] = None, level: str = "info"
+    ):
         """Add an event to the pipeline."""
         event = PipelineEvent(
-            timestamp=time.time(),
-            stage=stage,
-            message=message,
-            data=data or {},
-            level=level
+            timestamp=time.time(), stage=stage, message=message, data=data or {}, level=level
         )
         self.events.append(event)
 
@@ -133,7 +116,7 @@ class PipelineMonitor:
                 time_str,
                 f"[{stage_style}]{event.stage.value}[/{stage_style}]",
                 event.message,
-                details[:40] + "..." if len(details) > 40 else details
+                details[:40] + "..." if len(details) > 40 else details,
             )
 
         return table
@@ -145,7 +128,10 @@ class PipelineMonitor:
         metrics_text = Group(
             Text(f"Elapsed Time: {elapsed:.2f}s", style="cyan"),
             Text(f"Events: {len(self.events)}", style="yellow"),
-            Text(f"Current Stage: {self.events[-1].stage.value if self.events else 'N/A'}", style="green"),
+            Text(
+                f"Current Stage: {self.events[-1].stage.value if self.events else 'N/A'}",
+                style="green",
+            ),
         )
 
         if self.metrics:
@@ -180,7 +166,7 @@ class AdvancedIntegrationTester:
                 description="Basic HTML page with minimal content",
                 expected_tiles=1,
                 expected_links=1,
-                tags=["basic", "fast"]
+                tags=["basic", "fast"],
             ),
             TestCase(
                 name="Wikipedia Article",
@@ -189,18 +175,20 @@ class AdvancedIntegrationTester:
                 expected_tiles=5,
                 expected_links=50,
                 timeout=120.0,
-                tags=["complex", "slow"]
+                tags=["complex", "slow"],
             ),
             TestCase(
                 name="GitHub Repository",
                 url="https://github.com/anthropics/anthropic-sdk-python",
                 description="Dynamic SPA with code highlighting",
                 expected_tiles=3,
-                tags=["spa", "dynamic"]
+                tags=["spa", "dynamic"],
             ),
         ]
 
-    async def monitor_job_with_events(self, job_id: str, monitor: PipelineMonitor) -> Dict[str, Any]:
+    async def monitor_job_with_events(
+        self, job_id: str, monitor: PipelineMonitor
+    ) -> Dict[str, Any]:
         """Monitor a job and track pipeline events."""
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
@@ -218,7 +206,7 @@ class AdvancedIntegrationTester:
                         monitor.add_event(
                             TestStage.FAILED,
                             f"Failed to get job status: {response.status_code}",
-                            level="error"
+                            level="error",
                         )
                         return {"success": False, "error": f"Status code: {response.status_code}"}
 
@@ -231,35 +219,47 @@ class AdvancedIntegrationTester:
 
                         # Map states to stages and add events
                         if state == "BROWSER_STARTING":
-                            monitor.add_event(TestStage.BROWSER_START, "Launching Playwright browser")
+                            monitor.add_event(
+                                TestStage.BROWSER_START, "Launching Playwright browser"
+                            )
                         elif state == "BROWSER_READY":
-                            monitor.add_event(TestStage.BROWSER_START, "Browser ready", level="success")
+                            monitor.add_event(
+                                TestStage.BROWSER_START, "Browser ready", level="success"
+                            )
                         elif state == "CAPTURE_RUNNING":
                             monitor.add_event(TestStage.CAPTURE, "Performing viewport sweeps")
                             progress = job_data.get("progress", {})
                             if progress:
                                 monitor.metrics["tiles_captured"] = progress.get("done", 0)
                         elif state == "CAPTURE_DONE":
-                            monitor.add_event(TestStage.CAPTURE, "Capture complete", level="success")
+                            monitor.add_event(
+                                TestStage.CAPTURE, "Capture complete", level="success"
+                            )
                             manifest = job_data.get("manifest", {})
                             if manifest.get("tiles_total"):
                                 monitor.add_event(
                                     TestStage.TILING,
                                     f"Generated {manifest['tiles_total']} tiles",
                                     {"tiles": manifest["tiles_total"]},
-                                    level="success"
+                                    level="success",
                                 )
                         elif state == "OCR_RUNNING":
                             monitor.add_event(TestStage.OCR, "Processing tiles with OCR")
                             progress = job_data.get("progress", {})
                             if progress:
-                                monitor.metrics["ocr_progress"] = f"{progress.get('done', 0)}/{progress.get('total', 0)}"
+                                monitor.metrics["ocr_progress"] = (
+                                    f"{progress.get('done', 0)}/{progress.get('total', 0)}"
+                                )
                         elif state == "DONE":
-                            monitor.add_event(TestStage.COMPLETE, "Job completed successfully", level="success")
+                            monitor.add_event(
+                                TestStage.COMPLETE, "Job completed successfully", level="success"
+                            )
                             return {"success": True, "data": job_data}
                         elif state == "FAILED":
                             error = job_data.get("error", "Unknown error")
-                            monitor.add_event(TestStage.FAILED, f"Job failed: {error}", level="error")
+                            monitor.add_event(
+                                TestStage.FAILED, f"Job failed: {error}", level="error"
+                            )
                             return {"success": False, "error": error}
 
                     # Update metrics from manifest
@@ -272,9 +272,7 @@ class AdvancedIntegrationTester:
 
                 except Exception as e:
                     monitor.add_event(
-                        TestStage.FAILED,
-                        f"Error polling job: {str(e)}",
-                        level="error"
+                        TestStage.FAILED, f"Error polling job: {str(e)}", level="error"
                     )
                     return {"success": False, "error": str(e)}
 
@@ -285,18 +283,12 @@ class AdvancedIntegrationTester:
         """Run a single test case with detailed monitoring."""
 
         monitor = PipelineMonitor(self.console)
-        result = {
-            "test_case": test_case.name,
-            "success": False,
-            "data": {}
-        }
+        result = {"test_case": test_case.name, "success": False, "data": {}}
 
         try:
             # Initialize test
             monitor.add_event(
-                TestStage.INIT,
-                f"Starting test: {test_case.name}",
-                {"url": test_case.url}
+                TestStage.INIT, f"Starting test: {test_case.name}", {"url": test_case.url}
             )
 
             # Submit job
@@ -304,8 +296,7 @@ class AdvancedIntegrationTester:
                 monitor.add_event(TestStage.INIT, "Submitting capture job")
 
                 response = await client.post(
-                    f"{self.api_url}/jobs",
-                    json={"url": test_case.url, "reuse_cache": False}
+                    f"{self.api_url}/jobs", json={"url": test_case.url, "reuse_cache": False}
                 )
 
                 if response.status_code not in [200, 202]:
@@ -315,16 +306,13 @@ class AdvancedIntegrationTester:
                 job_id = job_data["id"]
 
                 monitor.add_event(
-                    TestStage.INIT,
-                    f"Job submitted",
-                    {"job_id": job_id},
-                    level="success"
+                    TestStage.INIT, "Job submitted", {"job_id": job_id}, level="success"
                 )
 
             # Monitor job with live display
             layout = self.create_monitoring_layout(test_case, monitor)
 
-            with Live(layout, refresh_per_second=2, console=self.console) as live:
+            with Live(layout, refresh_per_second=2, console=self.console):
                 job_result = await self.monitor_job_with_events(job_id, monitor)
 
                 # Validate results
@@ -332,26 +320,21 @@ class AdvancedIntegrationTester:
                     monitor.add_event(TestStage.VALIDATION, "Validating results")
 
                     validation_results = await self.validate_results(
-                        job_id,
-                        test_case,
-                        job_result["data"],
-                        monitor
+                        job_id, test_case, job_result["data"], monitor
                     )
 
                     result["success"] = validation_results["success"]
                     result["data"] = {
                         "job_id": job_id,
                         "validation": validation_results,
-                        "metrics": monitor.metrics
+                        "metrics": monitor.metrics,
                     }
                 else:
                     result["data"]["error"] = job_result.get("error", "Unknown error")
 
         except Exception as e:
             monitor.add_event(
-                TestStage.FAILED,
-                f"Test failed with exception: {str(e)}",
-                level="error"
+                TestStage.FAILED, f"Test failed with exception: {str(e)}", level="error"
             )
             result["data"]["error"] = str(e)
             result["data"]["traceback"] = traceback.format_exc()
@@ -359,11 +342,7 @@ class AdvancedIntegrationTester:
         return result
 
     async def validate_results(
-        self,
-        job_id: str,
-        test_case: TestCase,
-        job_data: Dict[str, Any],
-        monitor: PipelineMonitor
+        self, job_id: str, test_case: TestCase, job_data: Dict[str, Any], monitor: PipelineMonitor
     ) -> Dict[str, Any]:
         """Validate job results against expectations."""
 
@@ -382,20 +361,20 @@ class AdvancedIntegrationTester:
                     validation["checks"]["tiles"] = {
                         "expected": expected_tiles,
                         "actual": actual_tiles,
-                        "passed": tiles_match
+                        "passed": tiles_match,
                     }
 
                     if tiles_match:
                         monitor.add_event(
                             TestStage.VALIDATION,
                             f"Tile count validated: {actual_tiles}",
-                            level="success"
+                            level="success",
                         )
                     else:
                         monitor.add_event(
                             TestStage.VALIDATION,
                             f"Tile count mismatch: expected {expected_tiles}, got {actual_tiles}",
-                            level="warning"
+                            level="warning",
                         )
                         validation["success"] = False
 
@@ -407,7 +386,7 @@ class AdvancedIntegrationTester:
 
                     validation["checks"][artifact] = {
                         "exists": exists,
-                        "size": len(response.content) if exists else 0
+                        "size": len(response.content) if exists else 0,
                     }
 
                     if exists:
@@ -415,22 +394,16 @@ class AdvancedIntegrationTester:
                             TestStage.VALIDATION,
                             f"Artifact {artifact} verified",
                             {"size": len(response.content)},
-                            level="success"
+                            level="success",
                         )
                     else:
                         monitor.add_event(
-                            TestStage.VALIDATION,
-                            f"Artifact {artifact} missing",
-                            level="error"
+                            TestStage.VALIDATION, f"Artifact {artifact} missing", level="error"
                         )
                         validation["success"] = False
 
         except Exception as e:
-            monitor.add_event(
-                TestStage.VALIDATION,
-                f"Validation error: {str(e)}",
-                level="error"
-            )
+            monitor.add_event(TestStage.VALIDATION, f"Validation error: {str(e)}", level="error")
             validation["success"] = False
             validation["error"] = str(e)
 
@@ -443,17 +416,17 @@ class AdvancedIntegrationTester:
 
         # Header
         header = Panel(
-            Align.center(
-                Text(f"🧪 Testing: {test_case.name}", style="bold cyan")
-            ),
-            border_style="blue"
+            Align.center(Text(f"🧪 Testing: {test_case.name}", style="bold cyan")),
+            border_style="blue",
         )
 
         # Test info
         info_table = Table(box=None)
         info_table.add_column("Property", style="cyan")
         info_table.add_column("Value", style="yellow")
-        info_table.add_row("URL", test_case.url[:50] + "..." if len(test_case.url) > 50 else test_case.url)
+        info_table.add_row(
+            "URL", test_case.url[:50] + "..." if len(test_case.url) > 50 else test_case.url
+        )
         info_table.add_row("Description", test_case.description)
         info_table.add_row("Tags", ", ".join(test_case.tags))
         info_table.add_row("Timeout", f"{test_case.timeout}s")
@@ -462,14 +435,11 @@ class AdvancedIntegrationTester:
 
         # Create layout structure
         layout.split_column(
-            Layout(header, size=3),
-            Layout(name="main"),
-            Layout(name="footer", size=12)
+            Layout(header, size=3), Layout(name="main"), Layout(name="footer", size=12)
         )
 
         layout["main"].split_row(
-            Layout(info_panel, name="info"),
-            Layout(monitor.get_timeline_table(), name="timeline")
+            Layout(info_panel, name="info"), Layout(monitor.get_timeline_table(), name="timeline")
         )
 
         layout["footer"].update(monitor.get_metrics_panel())
@@ -498,7 +468,12 @@ class AdvancedIntegrationTester:
         info_grid.add_column(style="yellow")
 
         info_grid.add_row("API URL:", self.api_url, "Test Cases:", str(len(self.test_cases)))
-        info_grid.add_row("OCR Server:", self.settings.OLMOCR_SERVER[:40], "Timestamp:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        info_grid.add_row(
+            "OCR Server:",
+            self.settings.OLMOCR_SERVER[:40],
+            "Timestamp:",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
 
         self.console.print(Panel(info_grid, title="Configuration", border_style="blue"))
         self.console.print()
@@ -547,17 +522,20 @@ class AdvancedIntegrationTester:
                 failed += 1
                 status = "[red]❌ FAIL[/red]"
 
-            job_id = result["data"].get("job_id", "N/A")[:8] + "..." if result["data"].get("job_id") else "N/A"
+            job_id = (
+                result["data"].get("job_id", "N/A")[:8] + "..."
+                if result["data"].get("job_id")
+                else "N/A"
+            )
 
             validation = result["data"].get("validation", {})
-            val_summary = f"{sum(1 for c in validation.get('checks', {}).values() if c.get('passed'))}/{len(validation.get('checks', {}))}" if validation.get('checks') else "N/A"
-
-            results_table.add_row(
-                result["test_case"],
-                status,
-                job_id,
-                val_summary
+            val_summary = (
+                f"{sum(1 for c in validation.get('checks', {}).values() if c.get('passed'))}/{len(validation.get('checks', {}))}"
+                if validation.get("checks")
+                else "N/A"
             )
+
+            results_table.add_row(result["test_case"], status, job_id, val_summary)
 
         self.console.print(results_table)
 
@@ -571,11 +549,18 @@ class AdvancedIntegrationTester:
                     Text(f"Total Tests: {total}", style="cyan"),
                     Text(f"Passed: {passed}", style="green"),
                     Text(f"Failed: {failed}", style="red" if failed > 0 else "dim"),
-                    Text(f"Success Rate: {success_rate:.1f}%", style="green" if success_rate >= 80 else "yellow" if success_rate >= 60 else "red"),
+                    Text(
+                        f"Success Rate: {success_rate:.1f}%",
+                        style="green"
+                        if success_rate >= 80
+                        else "yellow"
+                        if success_rate >= 60
+                        else "red",
+                    ),
                 )
             ),
             title="📊 Statistics",
-            border_style="magenta"
+            border_style="magenta",
         )
 
         self.console.print(stats_panel)
@@ -598,11 +583,13 @@ class AdvancedIntegrationTester:
             verdict = "❌ NEEDS ATTENTION! Many tests failed"
             style = "bold red"
 
-        self.console.print(Panel(
-            Align.center(Text(verdict, style=style)),
-            border_style=style.split()[1],
-            box=box.DOUBLE
-        ))
+        self.console.print(
+            Panel(
+                Align.center(Text(verdict, style=style)),
+                border_style=style.split()[1],
+                box=box.DOUBLE,
+            )
+        )
 
 
 async def main():

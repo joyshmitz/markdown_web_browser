@@ -18,7 +18,9 @@ class StubJobManager:
         self.error = error
         self.calls: list[tuple[str, int | None, str | None]] = []
 
-    def delete_webhook(self, job_id: str, *, webhook_id: int | None = None, url: str | None = None) -> int:
+    def delete_webhook(
+        self, job_id: str, *, webhook_id: int | None = None, url: str | None = None
+    ) -> int:
         self.calls.append((job_id, webhook_id, url))
         if self.error:
             raise self.error
@@ -56,7 +58,9 @@ def test_delete_webhook_missing_identifier(monkeypatch):
     assert any("Provide id or url" in entry.get("msg", "") for entry in detail)
 
 
-@pytest.mark.parametrize("error,expected_status", [(KeyError("missing"), 404), (ValueError("bad"), 400)])
+@pytest.mark.parametrize(
+    "error,expected_status", [(KeyError("missing"), 404), (ValueError("bad"), 400)]
+)
 def test_delete_webhook_errors(monkeypatch, error, expected_status):
     stub = StubJobManager(error=error)
     client = get_client(monkeypatch, stub)

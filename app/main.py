@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, cast
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import start_http_server
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -344,7 +350,11 @@ async def job_events(job_id: str, request: Request, since: str | None = None) ->
                     event_entry = await asyncio.wait_for(queue.get(), timeout=5)
                     heartbeat = 0
                     sequence = _extract_sequence(event_entry)
-                    if sequence is not None and last_sequence is not None and sequence < last_sequence:
+                    if (
+                        sequence is not None
+                        and last_sequence is not None
+                        and sequence < last_sequence
+                    ):
                         continue
                     if sequence is not None:
                         last_sequence = sequence
@@ -391,6 +401,7 @@ async def job_manifest(job_id: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail="Manifest not available yet") from None
     return JSONResponse(manifest)
 
+
 @app.get("/jobs/{job_id}/result.md")
 async def job_markdown(job_id: str) -> PlainTextResponse:
     try:
@@ -403,7 +414,9 @@ async def job_markdown(job_id: str) -> PlainTextResponse:
 
 
 @app.get("/jobs/{job_id}/artifact/highlight", response_class=HTMLResponse)
-async def job_artifact_highlight(job_id: str, tile: str, y0: int = 0, y1: int | None = None) -> HTMLResponse:
+async def job_artifact_highlight(
+    job_id: str, tile: str, y0: int = 0, y1: int | None = None
+) -> HTMLResponse:
     try:
         store.resolve_artifact(job_id, tile)
     except (KeyError, FileNotFoundError) as exc:
@@ -424,7 +437,9 @@ async def job_artifact(job_id: str, artifact_path: str) -> FileResponse:
 
 
 @app.post("/jobs/{job_id}/embeddings/search", response_model=EmbeddingSearchResponse)
-async def embeddings_search(job_id: str, payload: EmbeddingSearchRequest) -> EmbeddingSearchResponse:
+async def embeddings_search(
+    job_id: str, payload: EmbeddingSearchRequest
+) -> EmbeddingSearchResponse:
     """Search section embeddings for a capture run using cosine similarity."""
 
     try:
@@ -560,7 +575,7 @@ def _snapshot_events(snapshot: JobSnapshot) -> list[tuple[str, str]]:
         events.append(("artifacts", json.dumps(artifacts)))
     error = snapshot.get("error")
     if error:
-        events.append(("log", f"<li class=\"text-red-500\">{error}</li>"))
+        events.append(("log", f'<li class="text-red-500">{error}</li>'))
     return events
 
 
@@ -574,6 +589,8 @@ def _extract_sequence(entry: Mapping[str, Any]) -> int | None:
     try:
         raw = entry.get("sequence") if isinstance(entry, Mapping) else None
     except AttributeError:
+        return None
+    if raw is None:
         return None
     try:
         return int(raw)

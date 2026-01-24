@@ -47,7 +47,9 @@ def test_update_smoke_pointers_copies_files(tmp_path: Path):
 
     assert result.exit_code == 0
     assert (root / "latest_summary.md").read_text(encoding="utf-8") == "summary"
-    assert (root / "latest_manifest_index.json").read_text(encoding="utf-8") == '[{"category": "docs"}]'
+    assert (root / "latest_manifest_index.json").read_text(
+        encoding="utf-8"
+    ) == '[{"category": "docs"}]'
     assert (root / "latest_metrics.json").read_text(encoding="utf-8") == "{}"
     assert (root / "weekly_summary.json").read_text(encoding="utf-8") == '{"generated_at": "now"}'
     assert (root / "weekly_slo.json").read_text(encoding="utf-8") == '{"summary": {}}'
@@ -136,8 +138,22 @@ def test_update_smoke_pointers_computes_slo(tmp_path: Path):
     source = tmp_path / "2025-11-11"
     _write_basic_run(source)
     manifest_entries = [
-        {"job_id": "a1", "category": "docs", "capture_ms": 1000, "ocr_ms": 2000, "stitch_ms": 300, "total_ms": 3300},
-        {"job_id": "b1", "category": "apps", "capture_ms": 2000, "ocr_ms": 4000, "stitch_ms": 700, "total_ms": 6700},
+        {
+            "job_id": "a1",
+            "category": "docs",
+            "capture_ms": 1000,
+            "ocr_ms": 2000,
+            "stitch_ms": 300,
+            "total_ms": 3300,
+        },
+        {
+            "job_id": "b1",
+            "category": "apps",
+            "capture_ms": 2000,
+            "ocr_ms": 4000,
+            "stitch_ms": 700,
+            "total_ms": 6700,
+        },
     ]
     (source / "manifest_index.json").write_text(json.dumps(manifest_entries), encoding="utf-8")
     (source / "metrics.json").write_text("{}", encoding="utf-8")
@@ -236,4 +252,6 @@ def test_update_smoke_pointers_syncs_prom_export(tmp_path: Path, monkeypatch):
 
     assert result.exit_code == 0
     assert export_path.exists()
-    assert export_path.read_text(encoding="utf-8") == (root / "latest_slo.prom").read_text(encoding="utf-8")
+    assert export_path.read_text(encoding="utf-8") == (root / "latest_slo.prom").read_text(
+        encoding="utf-8"
+    )

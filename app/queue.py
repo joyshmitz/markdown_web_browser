@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
@@ -91,17 +91,23 @@ async def process_capture_job(
     Returns:
         dict: Job result with status and output paths
     """
-    from app.jobs import run_capture_job
+    from app.capture import CaptureConfig
+    from app.jobs import execute_capture_job
 
     LOGGER.info(f"Starting capture job {job_id} for URL: {url}")
 
     try:
-        # Execute the actual capture logic
-        result = await run_capture_job(
-            job_id=job_id,
+        # Build config with optional profile and cache
+        config = CaptureConfig(
             url=url,
             profile_id=profile_id,
             cache_key=cache_key,
+        )
+        # Execute the actual capture logic
+        capture_result, _artifacts = await execute_capture_job(
+            job_id=job_id,
+            url=url,
+            config=config,
         )
 
         LOGGER.info(f"Completed capture job {job_id}")
@@ -110,7 +116,7 @@ async def process_capture_job(
             "status": "success",
             "job_id": job_id,
             "url": url,
-            "result": result,
+            "result": capture_result,
         }
 
     except Exception as e:
@@ -165,8 +171,8 @@ async def process_crawl_job(
 # Arq worker function registry
 # These functions will be available to the worker
 WORKER_FUNCTIONS = [
-    func(process_capture_job, name="capture"),
-    func(process_crawl_job, name="crawl"),
+    func(process_capture_job, name="capture"),  # type: ignore[arg-type]
+    func(process_crawl_job, name="crawl"),  # type: ignore[arg-type]
 ]
 
 
@@ -231,6 +237,9 @@ class JobQueue:
             _defer_by=timedelta(seconds=0),
             **kwargs,
         )
+
+        if job is None:
+            raise RuntimeError(f"Failed to enqueue job for function={function}")
 
         LOGGER.info(f"Enqueued job {job.job_id} to {queue_name} (function={function})")
 
@@ -310,8 +319,9 @@ class JobQueue:
         # Get info from Redis
         info = await pool.info()
 
-        stats = {
-            "queues": {},
+        queues: Dict[str, Any] = {}
+        stats: Dict[str, Any] = {
+            "queues": queues,
             "workers": info.get("connected_clients", 0),
             "total_processed": 0,
         }
@@ -320,7 +330,7 @@ class JobQueue:
         for priority in JobPriority:
             queue_name = f"queue:{priority.name.lower()}"
             queue_length = await pool.llen(queue_name)
-            stats["queues"][priority.name] = {
+            queues[priority.name] = {
                 "pending": queue_length,
                 "priority": priority.value,
             }
@@ -336,7 +346,7 @@ class JobQueue:
 
 def create_arq_worker(
     config: QueueConfig | None = None,
-    functions: list[Callable] | None = None,
+    functions: list[Any] | None = None,
 ) -> Worker:
     """Create an Arq worker instance.
 

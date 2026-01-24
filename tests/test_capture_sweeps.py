@@ -107,7 +107,9 @@ async def _stub_tiles(image_bytes: bytes, **kwargs: Any) -> list[TileSlice]:  # 
 
 
 @pytest.mark.asyncio()
-async def test_perform_viewport_sweeps_handles_shrink_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_perform_viewport_sweeps_handles_shrink_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     page = _FakePage(scroll_heights=[3000, 2500, 2500, 2500, 2500])
     context = cast(Any, _FakeContext(page))
     blocklist_config = BlocklistConfig(version="test", global_selectors=(), domain_selectors={})

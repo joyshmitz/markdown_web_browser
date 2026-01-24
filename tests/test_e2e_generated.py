@@ -10,6 +10,7 @@ import pytest
 
 from tests.rich_flowlogger import FlowLogger, create_console
 
+
 def _cases_path() -> Path:
     env_path = os.environ.get("MDWB_GENERATED_E2E_CASES")
     if env_path:
