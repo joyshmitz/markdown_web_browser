@@ -31,7 +31,7 @@ class _FakePage:
     async def add_style_tag(self, content: str) -> None:  # noqa: ARG002
         return None
 
-    async def goto(self, url: str, wait_until: str) -> None:  # noqa: ARG002
+    async def goto(self, url: str, wait_until: str = "load", **kwargs: Any) -> None:  # noqa: ARG002
         return None
 
     def locator(self, selector: str) -> _FakeLocator:

@@ -64,19 +64,19 @@ async def test_basic_capture():
         return False
 
 
-async def test_pyvips_available():
-    """Test if pyvips is available for image processing."""
+async def _check_pyvips_available():
+    """Check if pyvips is available for image processing (not a pytest test)."""
     print("\nTesting pyvips availability...")
 
     try:
         import pyvips
 
         print(
-            f"✅ pyvips is installed (version: {pyvips.version(0)}.{pyvips.version(1)}.{pyvips.version(2)})"
+            f"pyvips is installed (version: {pyvips.version(0)}.{pyvips.version(1)}.{pyvips.version(2)})"
         )
         return True
     except (ImportError, OSError) as e:
-        print(f"❌ pyvips not available: {e}")
+        print(f"pyvips not available: {e}")
         print("   Install with: sudo apt-get install libvips-dev && pip install pyvips")
         return False
 
@@ -114,7 +114,7 @@ async def main():
     # Test pyvips separately to avoid import error
     pyvips_ok = False
     try:
-        pyvips_ok = await test_pyvips_available()
+        pyvips_ok = await _check_pyvips_available()
     except Exception as e:
         print(f"\n❌ pyvips test failed: {e}")
         print("   This means image tiling won't work, but browser capture might still function")

@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 """Test different PNG encoding methods with pyvips to find the issue."""
 
-import pyvips
+import pytest
+
+# pyvips requires libvips to be installed on the system
+try:
+    import pyvips
+
+    PYVIPS_AVAILABLE = hasattr(pyvips, "Image")
+except (ImportError, OSError):
+    pyvips = None  # type: ignore[assignment]
+    PYVIPS_AVAILABLE = False
 
 
+@pytest.mark.skipif(not PYVIPS_AVAILABLE, reason="pyvips or libvips not available")
 def test_png_formats():
     """Test various PNG encoding formats."""
 

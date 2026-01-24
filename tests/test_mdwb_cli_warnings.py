@@ -135,4 +135,6 @@ def test_warnings_tail_handles_missing_file(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Warning log not found" in result.output
-    assert str(missing_log) in result.output
+    # The output may contain line wraps, so check that the path components are present
+    output_normalized = result.output.replace("\n", "")
+    assert str(missing_log) in output_normalized

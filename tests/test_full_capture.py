@@ -5,41 +5,29 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from app.capture import capture_tiles, CaptureConfig
 
 
+@pytest.mark.skip(reason="Requires Playwright and libvips - run manually")
 async def test_full_capture():
     """Test capturing a website using the actual implementation."""
 
     print("Testing full browser capture with libvips...")
 
-    # Create a simple test config
+    # Create a simple test config using current API
     config = CaptureConfig(
         url="https://example.com",
         profile_id="test_profile",
-        output_dir=Path(".cache/test_capture"),
-        browser="chromium",
-        wait_for="networkidle",
-        timeout_ms=30000,
-        scroll_delay_ms=350,
-        capture_method="deterministic",
-        mask_selectors=[],
-        blocklist_selectors=[],
-        extra_headers={},
-        user_agent=None,
         viewport_width=1280,
         viewport_height=2000,
-        device_scale_factor=2.0,
+        device_scale_factor=2,
         color_scheme="light",
-        lang="en-US",
-        timezone="America/New_York",
     )
-
-    # Ensure output directory exists
-    config.output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         print(f"Capturing {config.url}...")
