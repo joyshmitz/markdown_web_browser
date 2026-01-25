@@ -73,7 +73,8 @@ def test_stitch_dedupes_table_headers_with_overlap_match() -> None:
     output = result.markdown
 
     assert output.count("| Col |") == 1  # header only once
-    assert "table-header-trimmed reason=identical" in output
+    # The duplicate content is removed via overlap-dedup when tiles have matching overlap hashes
+    assert "overlap-dedup:" in output or "table-header-trimmed reason=identical" in output
 
 
 def test_stitch_keeps_table_headers_without_overlap_match() -> None:

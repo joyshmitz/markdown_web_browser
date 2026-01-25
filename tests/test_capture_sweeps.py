@@ -54,6 +54,14 @@ class _FakePage:
             value = args[0] if args else 0
             self.scroll_calls.append(int(value))
             return None
+        # Handle f-string formatted scrollTo calls like "window.scrollTo(0, 200)"
+        if script.startswith("window.scrollTo(0, ") and script.endswith(")"):
+            offset_str = script[len("window.scrollTo(0, ") : -1]
+            try:
+                self.scroll_calls.append(int(offset_str))
+            except ValueError:
+                pass
+            return None
         if script == "navigator.userAgent":
             return self.user_agent
         return None
