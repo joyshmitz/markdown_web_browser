@@ -432,9 +432,7 @@ def resume_status(
     json_output: bool = typer.Option(
         False, "--json/--no-json", help="Emit JSON instead of tables."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Inspect the completion state tracked by --resume."""
 
@@ -461,7 +459,9 @@ def resume_status(
     entry_limit = None if limit == 0 else limit
     completed_entries = manager.list_completed_entries(entry_limit)
     resolved_format = _resolve_output_format(json_output, output_format)
-    pending_entries = manager.list_pending_entries(entry_limit) if pending or resolved_format else []
+    pending_entries = (
+        manager.list_pending_entries(entry_limit) if pending or resolved_format else []
+    )
     data = {
         "root": str(manager.root),
         "done_dir": str(manager.done_dir),
@@ -1257,9 +1257,7 @@ def diag(
     json_output: bool = typer.Option(
         False, "--json/--no-json", help="Emit JSON payload instead of tables."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Print manifest/environment details for a job."""
 
@@ -1386,9 +1384,7 @@ def watch(
 def demo_snapshot(
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     json_output: bool = typer.Option(False, "--json", help="Print raw JSON instead of tables."),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Fetch the demo job snapshot from /jobs/demo."""
 
@@ -1410,9 +1406,7 @@ def demo_snapshot(
 def demo_links(
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     json_output: bool = typer.Option(False, "--json", help="Print raw JSON."),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Fetch the demo links JSON."""
 
@@ -2182,7 +2176,9 @@ def _print_seam_markers(entries: Any) -> None:
         )
 
 
-def _follow_warning_log(path: Path, *, output_format: Optional[OutputFormat], interval: float) -> None:
+def _follow_warning_log(
+    path: Path, *, output_format: Optional[OutputFormat], interval: float
+) -> None:
     handle: TextIO | None = None
     last_inode: int | None = None
     try:
@@ -2277,9 +2273,7 @@ def warnings_tail(
     json_output: bool = typer.Option(
         False, "--json", help="Emit raw JSON lines instead of a table."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
     log_path: Optional[Path] = typer.Option(None, "--log-path", help="Override WARNING_LOG_PATH."),
 ) -> None:
     """Tail the structured warning/blocklist log."""
@@ -2337,9 +2331,7 @@ def dom_links(
     json_output: bool = typer.Option(
         False, "--json", help="Print raw JSON list instead of a table."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Extract links from a DOM snapshot using the ogf helper."""
 
@@ -2371,9 +2363,7 @@ def jobs_webhooks_list(
     json_output: bool = typer.Option(
         False, "--json", help="Emit structured JSON instead of a table."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """List registered webhooks for a job."""
 
@@ -2410,9 +2400,7 @@ def jobs_webhooks_add(
     json_output: bool = typer.Option(
         False, "--json/--no-json", help="Emit JSON payload instead of text."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Register a webhook for a job."""
 
@@ -2448,9 +2436,7 @@ def jobs_webhooks_delete(
     json_output: bool = typer.Option(
         False, "--json/--no-json", help="Emit JSON payload instead of text."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Remove a webhook subscription from a job."""
 
@@ -2577,9 +2563,7 @@ def jobs_ocr_metrics(
     job_id: str = typer.Argument(..., help="Job identifier"),
     api_base: Optional[str] = typer.Option(None, help="Override API base URL"),
     json_output: bool = typer.Option(False, "--json", help="Emit OCR telemetry as JSON"),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Show OCR batch latency + quota telemetry for a job."""
 
@@ -2609,9 +2593,7 @@ def jobs_replay_manifest(
     json_output: bool = typer.Option(
         False, "--json/--no-json", help="Emit JSON instead of text output."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Replay a capture manifest via POST /replay."""
 
@@ -2668,9 +2650,7 @@ def jobs_embeddings_search(
     json_output: bool = typer.Option(
         False, "--json/--no-json", help="Emit JSON instead of a table."
     ),
-    output_format: Optional[str] = typer.Option(
-        None, "--format", help="Emit json or toon output."
-    ),
+    output_format: Optional[str] = typer.Option(None, "--format", help="Emit json or toon output."),
 ) -> None:
     """Search section embeddings for a job."""
 
@@ -2696,9 +2676,7 @@ def jobs_embeddings_search(
     _print_embedding_matches(data.get("total_sections", 0), data.get("matches", []))
 
 
-def _print_delete_error(
-    detail: str, job_id: str, output_format: Optional[OutputFormat]
-) -> None:
+def _print_delete_error(detail: str, job_id: str, output_format: Optional[OutputFormat]) -> None:
     if output_format:
         _emit_machine_payload(
             {"status": "error", "job_id": job_id, "detail": detail},
