@@ -17,8 +17,11 @@ from app.ocr_policy import (
     BACKEND_MODE_MAAS,
     BACKEND_MODE_OPENAI_COMPATIBLE,
     OCRBackendCandidate,
+    OCRPolicyDecision,
     OCRPolicyInputs,
+    OCRRuntimeSignal,
     select_ocr_backend,
+    should_reevaluate_policy,
 )
 from app.settings import Settings, get_settings, resolve_ocr_backend_defaults
 
@@ -28,6 +31,7 @@ REQUEST_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
 _BACKOFF_SCHEDULE = (3.0, 9.0)
 _MAX_ATTEMPTS = len(_BACKOFF_SCHEDULE) + 1
 _QUOTA_WARNING_RATIO = 0.7
+_CPU_LATENCY_SPIKE_MS = 20_000
 GLM_OPENAI_DEFAULT_MODEL = "glm-ocr"
 GLM_MAAS_DEFAULT_MODEL = "glm-ocr"
 GLM_MAAS_DEFAULT_API_URL = "https://open.bigmodel.cn/api/paas/v4/layout_parsing"
@@ -279,6 +283,8 @@ class SubmitTilesResult:
     backend: OCRBackendRuntime = field(default_factory=_default_backend_runtime)
     host_capabilities: dict[str, object] | None = None
     autotune: "OcrAutotuneSnapshot | None" = None
+    reevaluate_policy: bool = False
+    reevaluation_reason_code: str | None = None
 
 
 @dataclass(slots=True)
@@ -535,17 +541,27 @@ async def probe_ocr_backend(
         backend_mode=backend.backend_mode,
     )
     capabilities: dict[str, object] = {
-        "supports_submit": backend.backend_mode == BACKEND_MODE_OPENAI_COMPATIBLE,
+        "supports_submit": backend.backend_mode in {BACKEND_MODE_OPENAI_COMPATIBLE, BACKEND_MODE_MAAS},
         "supports_probe": True,
         "supports_health": True,
         "max_batch_tiles": cfg.ocr.max_batch_tiles,
         "max_batch_bytes": cfg.ocr.max_batch_bytes,
-        "min_concurrency": cfg.ocr.min_concurrency,
-        "max_concurrency": cfg.ocr.max_concurrency,
         "reason_codes": list(backend.reason_codes),
         "reevaluate_after_s": backend.reevaluate_after_s,
         "host_capabilities": capabilities_snapshot.to_dict(),
     }
+    min_concurrency, max_concurrency, tuning_profile = _resolve_runtime_concurrency_limits(
+        settings=cfg,
+        backend=backend,
+        capabilities=capabilities_snapshot,
+    )
+    capabilities["min_concurrency"] = min_concurrency
+    capabilities["max_concurrency"] = max_concurrency
+    capabilities["tuning_profile"] = tuning_profile
+    if backend.backend_id.endswith("-local-openai"):
+        capabilities["model_aliases"] = list(
+            _model_alias_candidates(cfg.ocr.model, backend_id=backend.backend_id)
+        )
     return OCRBackendProbe(
         backend=backend,
         endpoint=endpoint,
@@ -563,8 +579,9 @@ async def healthcheck_ocr_backend(
 
     probe = await probe_ocr_backend(settings=settings, client=client)
     cfg = settings or get_settings()
+    request_timeout = _resolve_request_timeout(backend=probe.backend)
     owns_client = client is None
-    http_client = client or httpx.AsyncClient(timeout=REQUEST_TIMEOUT, http2=True)
+    http_client = client or httpx.AsyncClient(timeout=request_timeout, http2=True)
     headers: dict[str, str] = {}
     if cfg.ocr.api_key and not cfg.ocr.local_url:
         headers["Authorization"] = f"Bearer {cfg.ocr.api_key}"
@@ -612,7 +629,7 @@ async def submit_tiles(
     cfg = settings or get_settings()
     capabilities_snapshot = get_host_capabilities()
     backend = resolve_ocr_backend(cfg, capabilities=capabilities_snapshot)
-    if backend.backend_mode != BACKEND_MODE_OPENAI_COMPATIBLE:
+    if backend.backend_mode not in {BACKEND_MODE_OPENAI_COMPATIBLE, BACKEND_MODE_MAAS}:
         raise NotImplementedError(
             "Configured OCR backend mode is not wired for tile submission yet: "
             f"{backend.backend_mode}"
@@ -637,18 +654,23 @@ async def submit_tiles(
     if cfg.ocr.api_key and not cfg.ocr.local_url:
         headers["Authorization"] = f"Bearer {cfg.ocr.api_key}"
 
+    request_timeout = _resolve_request_timeout(backend=backend)
     owns_client = client is None
-    http_client = client or httpx.AsyncClient(timeout=REQUEST_TIMEOUT, http2=True)
+    http_client = client or httpx.AsyncClient(timeout=request_timeout, http2=True)
 
-    min_limit = max(1, cfg.ocr.min_concurrency)
-    max_limit = max(min_limit, cfg.ocr.max_concurrency)
+    min_limit, max_limit, _ = _resolve_runtime_concurrency_limits(
+        settings=cfg,
+        backend=backend,
+        capabilities=capabilities_snapshot,
+    )
     limiter = _AdaptiveLimiter(_AutotuneController(min_limit=min_limit, max_limit=max_limit))
     encoded_tiles = [_encode_request(req, cfg) for req in requests]
 
-    # For OpenAI-compatible endpoints, force 1 tile per batch since the API
-    # returns a single combined response for multiple images
+    # OpenAI-compatible + GLM MaaS both return one OCR payload per request.
     max_batch_tiles = (
-        1 if endpoint.endswith("/chat/completions") else max(1, cfg.ocr.max_batch_tiles)
+        1
+        if backend.backend_mode in {BACKEND_MODE_OPENAI_COMPATIBLE, BACKEND_MODE_MAAS}
+        else max(1, cfg.ocr.max_batch_tiles)
     )
 
     batches = _group_tiles(
@@ -668,6 +690,8 @@ async def submit_tiles(
                 headers=headers,
                 http_client=http_client,
                 use_fp8=cfg.ocr.use_fp8,
+                backend_mode=backend.backend_mode,
+                backend_id=backend.backend_id,
             )
         telemetry.append(batch_result.telemetry)
         for tile_id, chunk in zip(batch_result.tile_ids, batch_result.markdown, strict=True):
@@ -683,6 +707,10 @@ async def submit_tiles(
     quota_status = _quota_tracker.record(
         len(requests), limit=cfg.ocr.daily_quota_tiles, ratio=_QUOTA_WARNING_RATIO
     )
+    reevaluate_policy, reevaluation_reason_code = _evaluate_runtime_policy_reevaluation(
+        backend=backend,
+        batches=telemetry,
+    )
     markdown_chunks = [markdown_by_id[tile.tile_id] for tile in encoded_tiles]
     return SubmitTilesResult(
         markdown_chunks=markdown_chunks,
@@ -691,6 +719,8 @@ async def submit_tiles(
         backend=backend,
         host_capabilities=capabilities_snapshot.to_dict(),
         autotune=limiter.snapshot(),
+        reevaluate_policy=reevaluate_policy,
+        reevaluation_reason_code=reevaluation_reason_code,
     )
 
 
@@ -714,6 +744,8 @@ async def _submit_batch(
     headers: dict[str, str],
     http_client: httpx.AsyncClient,
     use_fp8: bool,
+    backend_mode: str,
+    backend_id: str,
 ) -> _BatchResult:
     payload_bytes = sum(tile.size_bytes for tile in tiles) + 2048
     attempts = 0
@@ -721,16 +753,25 @@ async def _submit_batch(
     status_code = 0
     request_id: str | None = None
     tile_ids = tuple(tile.tile_id for tile in tiles)
+    model_aliases = _model_alias_candidates(tiles[0].model or "", backend_id=backend_id)
+    model_alias_index = 0
     while attempts < _MAX_ATTEMPTS:
         attempts += 1
-        payload = _build_payload(tiles, use_fp8=use_fp8)
+        model_override = model_aliases[model_alias_index] if model_aliases else None
+        payload = _build_payload(
+            tiles,
+            use_fp8=use_fp8,
+            backend_mode=backend_mode,
+            backend_id=backend_id,
+            model_override=model_override,
+        )
         start = time.perf_counter()
         try:
             response = await http_client.post(endpoint, headers=headers, json=payload)
             status_code = response.status_code
             response.raise_for_status()
             data = response.json()
-            markdown = _extract_markdown_batch(data, tile_ids)
+            markdown = _extract_markdown_batch(data, tile_ids, backend_mode=backend_mode)
             latency_ms = int((time.perf_counter() - start) * 1000)
             request_id = _extract_request_id(response, data)
             telemetry = OCRBatchTelemetry(
@@ -744,9 +785,29 @@ async def _submit_batch(
             return _BatchResult(tile_ids=tile_ids, markdown=markdown, telemetry=telemetry)
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code
+            if _should_try_next_model_alias(
+                exc.response,
+                backend_mode=backend_mode,
+                backend_id=backend_id,
+                current_alias_index=model_alias_index,
+                model_aliases=model_aliases,
+            ):
+                previous_model = model_aliases[model_alias_index]
+                model_alias_index += 1
+                next_model = model_aliases[model_alias_index]
+                attempts = max(0, attempts - 1)
+                LOGGER.warning(
+                    "OCR model alias fallback (mode=%s, backend=%s): %s -> %s",
+                    backend_mode,
+                    backend_id,
+                    previous_model,
+                    next_model,
+                )
+                continue
             last_error = exc
             LOGGER.warning(
-                "olmOCR request failed (status=%s, attempt=%s/%s)",
+                "OCR request failed (mode=%s, status=%s, attempt=%s/%s)",
+                backend_mode,
                 status_code,
                 attempts,
                 _MAX_ATTEMPTS,
@@ -754,24 +815,48 @@ async def _submit_batch(
         except Exception as exc:
             last_error = exc
             LOGGER.warning(
-                "olmOCR request error on attempt %s/%s: %s", attempts, _MAX_ATTEMPTS, exc
+                "OCR request error (mode=%s) on attempt %s/%s: %s",
+                backend_mode,
+                attempts,
+                _MAX_ATTEMPTS,
+                exc,
             )
         if attempts >= _MAX_ATTEMPTS:
             break
         await _sleep(_BACKOFF_SCHEDULE[attempts - 1])
-    raise RuntimeError(f"olmOCR request failed after {_MAX_ATTEMPTS} attempts") from last_error
+    raise RuntimeError(
+        f"OCR request failed after {_MAX_ATTEMPTS} attempts (mode={backend_mode})"
+    ) from last_error
 
 
-def _build_payload(tiles: Sequence[_EncodedTile], *, use_fp8: bool) -> dict:
-    # OpenAI-compatible vision format with multiple images in content array
+def _build_payload(
+    tiles: Sequence[_EncodedTile],
+    *,
+    use_fp8: bool,
+    backend_mode: str,
+    backend_id: str,
+    model_override: str | None = None,
+) -> dict:
     if not tiles:
         raise ValueError("Must provide at least one tile")
 
+    if backend_mode == BACKEND_MODE_MAAS:
+        if len(tiles) != 1:
+            raise ValueError("GLM MaaS requests must contain exactly one tile")
+        tile = tiles[0]
+        model = model_override or tile.model or GLM_MAAS_DEFAULT_MODEL
+        return build_glm_maas_payload(file_ref=tile.image_b64, model=model)
+
+    # OpenAI-compatible vision format with multiple images in content array
     # Add allenai/ prefix if not present (for DeepInfra)
-    model = tiles[0].model
+    model = model_override or tiles[0].model
     if not model:
         raise ValueError("Model must be specified for OCR requests")
-    if not model.startswith("allenai/") and "olmOCR" in model:
+    if (
+        backend_id.endswith("-remote-openai")
+        and not model.startswith("allenai/")
+        and "olmocr" in model.lower()
+    ):
         model = f"allenai/{model.split('-FP8')[0]}"  # Remove -FP8 suffix and add prefix
 
     # olmOCR's official prompt from build_no_anchoring_v4_yaml_prompt()
@@ -855,11 +940,21 @@ def _group_tiles(
     return groups
 
 
-def _extract_markdown_batch(response_json: dict, tile_ids: Sequence[str]) -> list[str]:
+def _extract_markdown_batch(
+    response_json: dict,
+    tile_ids: Sequence[str],
+    *,
+    backend_mode: str,
+) -> list[str]:
     """Normalize various olmOCR response formats with multi-input support."""
 
     if not isinstance(response_json, dict):
         raise ValueError("OCR response must be a JSON object")
+
+    if backend_mode == BACKEND_MODE_MAAS:
+        if len(tile_ids) != 1:
+            raise ValueError("GLM MaaS response requires exactly one tile id")
+        return [extract_glm_maas_markdown(response_json)]
 
     # OpenAI-compatible format: {"choices": [{"message": {"content": "..."}}]}
     choices = response_json.get("choices")
@@ -915,6 +1010,9 @@ def _extract_request_id(response: httpx.Response, payload: dict) -> str | None:
     req_id = payload.get("request_id")
     if isinstance(req_id, str):
         return req_id
+    payload_id = payload.get("id") or payload.get("task_id")
+    if isinstance(payload_id, str):
+        return payload_id
     return None
 
 
@@ -950,6 +1048,147 @@ def _health_probe_url(endpoint: str, *, backend_mode: str) -> str:
 
 async def _sleep(delay: float) -> None:
     await asyncio.sleep(delay)
+
+
+def _resolve_runtime_concurrency_limits(
+    *,
+    settings: Settings,
+    backend: OCRBackendRuntime,
+    capabilities: HardwareCapabilitySnapshot,
+) -> tuple[int, int, str]:
+    min_limit = max(1, settings.ocr.min_concurrency)
+    max_limit = max(min_limit, settings.ocr.max_concurrency)
+    profile = "configured"
+
+    if backend.backend_id.endswith("-local-openai") and backend.hardware_path == "gpu":
+        # On multi-GPU hosts, scale the ceiling automatically so local vLLM/SGLang
+        # deployments can keep devices saturated without user tuning.
+        suggested_max = min(16, max(max_limit, max(1, capabilities.gpu_count) * 4))
+        max_limit = max(min_limit, suggested_max)
+        min_limit = max(2, min_limit)
+        profile = "local-gpu-adaptive"
+    elif backend.backend_id.endswith("-local-openai") and backend.hardware_path == "cpu":
+        # CPU path intentionally stays conservative to avoid starving capture/stitch threads.
+        cpu_cores = max(1, capabilities.cpu_logical_cores)
+        suggested_max = max(1, min(4, max(1, cpu_cores // 4)))
+        max_limit = max(1, min(max_limit, suggested_max))
+        min_limit = 1
+        profile = "local-cpu-conservative"
+
+    return min_limit, max_limit, profile
+
+
+def _resolve_request_timeout(*, backend: OCRBackendRuntime) -> httpx.Timeout:
+    if backend.backend_id.endswith("-local-openai") and backend.hardware_path == "cpu":
+        return httpx.Timeout(connect=10.0, read=180.0, write=60.0, pool=10.0)
+    return REQUEST_TIMEOUT
+
+
+def _runtime_policy_decision_from_backend(backend: OCRBackendRuntime) -> OCRPolicyDecision:
+    fallback_chain = tuple(
+        candidate for candidate in backend.fallback_chain if candidate != backend.backend_id
+    )
+    return OCRPolicyDecision(
+        backend_id=backend.backend_id,
+        backend_mode=backend.backend_mode,
+        hardware_path=backend.hardware_path,
+        fallback_chain=fallback_chain,
+        reason_codes=backend.reason_codes,
+        reevaluate_after_s=backend.reevaluate_after_s,
+    )
+
+
+def _evaluate_runtime_policy_reevaluation(
+    *,
+    backend: OCRBackendRuntime,
+    batches: Sequence[OCRBatchTelemetry],
+) -> tuple[bool, str | None]:
+    if not batches:
+        return False, None
+    if not (backend.backend_id.endswith("-local-openai") and backend.hardware_path == "cpu"):
+        return False, None
+
+    signal = OCRRuntimeSignal.NO_CHANGE
+    if any(batch.attempts >= 2 for batch in batches):
+        signal = OCRRuntimeSignal.REQUEST_FAILED
+    elif max(batch.latency_ms for batch in batches) >= _CPU_LATENCY_SPIKE_MS:
+        signal = OCRRuntimeSignal.LATENCY_SPIKE
+
+    if signal == OCRRuntimeSignal.NO_CHANGE:
+        return False, None
+
+    decision = should_reevaluate_policy(
+        signal=signal,
+        decision=_runtime_policy_decision_from_backend(backend),
+    )
+    if decision.should_reevaluate:
+        LOGGER.warning(
+            "OCR runtime requested policy reevaluation (backend=%s, signal=%s, reason=%s)",
+            backend.backend_id,
+            signal.value,
+            decision.reason_code,
+        )
+        return True, decision.reason_code
+    return False, None
+
+
+def _model_alias_candidates(model: str, *, backend_id: str) -> tuple[str, ...]:
+    normalized = model.strip()
+    if not normalized:
+        return tuple()
+
+    candidates: list[str] = []
+
+    def _add(candidate: str) -> None:
+        value = candidate.strip()
+        if value and value not in candidates:
+            candidates.append(value)
+
+    _add(normalized)
+
+    if not backend_id.endswith("-local-openai"):
+        return tuple(candidates)
+
+    if "/" in normalized:
+        _add(normalized.rsplit("/", 1)[-1])
+
+    lower_model = normalized.lower()
+    if "glm" in lower_model:
+        _add(GLM_OPENAI_DEFAULT_MODEL)
+        _add("GLM-4.1V-9B-Thinking")
+        _add("THUDM/GLM-4.1V-9B-Thinking")
+        _add("zai-org/GLM-4.1V-9B-Thinking")
+    elif "olmocr" in lower_model:
+        bare_model = normalized.removeprefix("allenai/")
+        _add(bare_model)
+        _add(f"allenai/{bare_model}")
+
+    return tuple(candidates)
+
+
+def _should_try_next_model_alias(
+    response: httpx.Response,
+    *,
+    backend_mode: str,
+    backend_id: str,
+    current_alias_index: int,
+    model_aliases: Sequence[str],
+) -> bool:
+    if backend_mode != BACKEND_MODE_OPENAI_COMPATIBLE:
+        return False
+    if not backend_id.endswith("-local-openai"):
+        return False
+    if current_alias_index + 1 >= len(model_aliases):
+        return False
+    if response.status_code not in {400, 404}:
+        return False
+    try:
+        detail = response.text.lower()
+    except Exception:  # pragma: no cover - defensive
+        return False
+    return "model" in detail and any(
+        token in detail for token in ("not found", "does not exist", "unknown", "invalid")
+    )
 
 
 def _mode_from_backend_id(backend_id: str) -> str:

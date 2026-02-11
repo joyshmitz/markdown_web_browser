@@ -57,6 +57,14 @@ guarded hyphenation, table seam rules)
   - Request contract mirrors OpenAI vision chat:
     - `messages[0].content` includes one text prompt and one `image_url` data URI.
     - Typical model identifier is `glm-ocr` (or deployment alias).
+  - Adapter behavior:
+    - Preserves configured local served-name strings (no forced remote-style model prefixing).
+    - On local `400/404` model-not-found responses, retries with GLM alias candidates
+      before entering normal transport backoff.
+    - Exposes adaptive local-GPU concurrency metadata via `probe.capabilities`
+      so orchestration can reason about effective runtime ceilings.
+    - Exposes conservative local-CPU concurrency metadata and emits runtime
+      reevaluation signals when CPU retries/latency indicate reliability degradation.
   - Response normalization should parse string content and list-of-content formats.
 - **Optional Ollama mode** (`/api/generate`) is a deployment edge path:
   - Keep explicit because request/response format differs from OpenAI-compatible mode.

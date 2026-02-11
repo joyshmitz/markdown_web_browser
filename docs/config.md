@@ -71,6 +71,19 @@ manifest schema if they need to be echoed downstream.
 - No new environment keys are required for contract validation work.
 - For **local OpenAI-compatible GLM-OCR** serving, existing `OCR_LOCAL_URL` can point at
   a `/v1` endpoint (for example vLLM/SGLang with `glm-ocr` served model name).
+  - The adapter now preserves configured served model names for local OpenAI endpoints
+    (it no longer force-prefixes `allenai/` in local mode).
+  - If a local server returns model-not-found errors (`400/404`) the client
+    automatically retries with known GLM aliases (for example `glm-ocr`,
+    `GLM-4.1V-9B-Thinking`, `THUDM/GLM-4.1V-9B-Thinking`) before consuming
+    transport retry budget.
+  - Local GPU runtime exposes adaptive concurrency hints in backend probe metadata
+    (`tuning_profile=local-gpu-adaptive` and effective min/max concurrency).
+  - Local CPU runtime uses conservative defaults (`tuning_profile=local-cpu-conservative`)
+    so OCR requests do not starve capture/stitch workloads on CPU-only hosts.
+  - CPU local retries/latency spikes now emit policy reevaluation signals in submit
+    results (`reevaluate_policy`, `reevaluation_reason_code`) so failover orchestration
+    can switch to alternate backends automatically.
 - For **GLM MaaS** contract validation, treat the request as a separate provider contract:
   `{"model":"glm-ocr","file":"<url-or-data-uri>"}` where `file` is URL or data URI.
 - During adapter rollout beads, manifest metadata must explicitly capture

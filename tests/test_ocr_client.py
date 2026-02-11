@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from dataclasses import replace
 import io
+import json
 from typing import Iterator
 
 import httpx
@@ -214,6 +215,350 @@ async def test_healthcheck_ocr_backend_treats_reachable_4xx_as_healthy() -> None
         health = await healthcheck_ocr_backend(settings=get_settings(), client=client)
     assert health.healthy is True
     assert health.status_code == 405
+
+
+@pytest.mark.asyncio
+async def test_submit_tiles_glm_maas_contract_and_telemetry() -> None:
+    settings = get_settings()
+    maas_settings = replace(
+        settings,
+        ocr=replace(
+            settings.ocr,
+            server_url="https://open.bigmodel.cn/api/paas/v4/layout_parsing",
+            local_url=None,
+            api_key="test-maas-key",
+            model="glm-ocr",
+            min_concurrency=1,
+            max_concurrency=1,
+        ),
+    )
+    requests = [
+        OCRRequest(tile_id="tile-001", tile_bytes=b"tile-one"),
+        OCRRequest(tile_id="tile-002", tile_bytes=b"tile-two"),
+    ]
+    seen_urls: list[str] = []
+    seen_auth_headers: list[str | None] = []
+    seen_models: list[object] = []
+    seen_files: list[object] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        seen_urls.append(str(request.url))
+        seen_auth_headers.append(request.headers.get("Authorization"))
+        if isinstance(body, dict):
+            seen_models.append(body.get("model"))
+            seen_files.append(body.get("file"))
+        else:
+            seen_models.append(None)
+            seen_files.append(None)
+        idx = len(seen_urls)
+        return httpx.Response(200, json={"request_id": f"maas-{idx}", "markdown": f"# tile {idx}"})
+
+    transport = httpx.MockTransport(_handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await submit_tiles(requests=requests, settings=maas_settings, client=client)
+
+    assert result.backend.backend_mode == "maas"
+    assert result.backend.backend_id == "glm-ocr-maas"
+    assert result.markdown_chunks == ["# tile 1", "# tile 2"]
+    assert len(result.batches) == 2
+    assert [batch.request_id for batch in result.batches] == ["maas-1", "maas-2"]
+    assert len(seen_urls) == 2
+    assert seen_urls == ["https://open.bigmodel.cn/api/paas/v4/layout_parsing"] * 2
+    assert seen_auth_headers == ["Bearer test-maas-key"] * 2
+    assert seen_models == ["glm-ocr", "glm-ocr"]
+    for file_value in seen_files:
+        assert isinstance(file_value, str)
+        assert file_value.startswith("data:image/png;base64,")
+
+
+@pytest.mark.asyncio
+async def test_submit_tiles_glm_maas_retries_5xx_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    maas_settings = replace(
+        settings,
+        ocr=replace(
+            settings.ocr,
+            server_url="https://open.bigmodel.cn/api/paas/v4/layout_parsing",
+            local_url=None,
+            api_key="test-maas-key",
+            model="glm-ocr",
+            min_concurrency=1,
+            max_concurrency=1,
+        ),
+    )
+    request = OCRRequest(tile_id="tile-001", tile_bytes=b"tile-retry")
+    attempt_count = 0
+    slept: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr("app.ocr_client._sleep", _fake_sleep)
+
+    def _handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count == 1:
+            return httpx.Response(503, json={"error": "busy"})
+        return httpx.Response(200, json={"task_id": "maas-ok", "data": {"result": {"content": "Recovered"}}})
+
+    transport = httpx.MockTransport(_handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await submit_tiles(requests=[request], settings=maas_settings, client=client)
+
+    assert attempt_count == 2
+    assert slept == [3.0]
+    assert result.markdown_chunks == ["Recovered"]
+    assert len(result.batches) == 1
+    assert result.batches[0].attempts == 2
+    assert result.batches[0].request_id == "maas-ok"
+
+
+@pytest.mark.asyncio
+async def test_submit_tiles_local_openai_keeps_configured_served_model_name() -> None:
+    settings = get_settings()
+    local_settings = replace(
+        settings,
+        ocr=replace(
+            settings.ocr,
+            local_url="http://localhost:8001/v1",
+            api_key="should-not-be-sent-for-local",
+            model="olmOCR-2-7B-1025-FP8",
+            min_concurrency=1,
+            max_concurrency=1,
+        ),
+    )
+    request = OCRRequest(tile_id="tile-local-001", tile_bytes=b"tile-local")
+    seen_url: str | None = None
+    seen_auth: str | None = None
+    seen_model: object = None
+
+    def _handler(http_request: httpx.Request) -> httpx.Response:
+        nonlocal seen_url, seen_auth, seen_model
+        seen_url = str(http_request.url)
+        seen_auth = http_request.headers.get("Authorization")
+        payload = json.loads(http_request.content.decode("utf-8"))
+        if isinstance(payload, dict):
+            seen_model = payload.get("model")
+        return httpx.Response(200, json={"choices": [{"message": {"content": "local-ocr"}}]})
+
+    transport = httpx.MockTransport(_handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await submit_tiles(requests=[request], settings=local_settings, client=client)
+
+    assert seen_url == "http://localhost:8001/v1/chat/completions"
+    assert seen_auth is None
+    assert seen_model == "olmOCR-2-7B-1025-FP8"
+    assert result.markdown_chunks == ["local-ocr"]
+    assert len(result.batches) == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_tiles_local_glm_alias_fallback_on_model_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    local_settings = replace(
+        settings,
+        ocr=replace(
+            settings.ocr,
+            local_url="http://localhost:8001/v1",
+            model="zai-org/GLM-4.1V-9B-Thinking",
+            min_concurrency=1,
+            max_concurrency=1,
+        ),
+    )
+    request = OCRRequest(tile_id="tile-local-002", tile_bytes=b"tile-local")
+    slept: list[float] = []
+    seen_models: list[str] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr("app.ocr_client._sleep", _fake_sleep)
+
+    def _handler(http_request: httpx.Request) -> httpx.Response:
+        payload = json.loads(http_request.content.decode("utf-8"))
+        model_value = ""
+        if isinstance(payload, dict):
+            maybe_model = payload.get("model")
+            if isinstance(maybe_model, str):
+                model_value = maybe_model
+                seen_models.append(maybe_model)
+        if len(seen_models) == 1:
+            return httpx.Response(
+                404,
+                json={"error": {"message": f"model {model_value} does not exist"}},
+            )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "alias-ok"}}]})
+
+    transport = httpx.MockTransport(_handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await submit_tiles(requests=[request], settings=local_settings, client=client)
+
+    assert len(seen_models) >= 2
+    assert seen_models[0] == "zai-org/GLM-4.1V-9B-Thinking"
+    assert seen_models[1] == "GLM-4.1V-9B-Thinking"
+    assert slept == []
+    assert result.markdown_chunks == ["alias-ok"]
+    assert result.batches[0].attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_probe_ocr_backend_local_gpu_exposes_adaptive_tuning(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    local_settings = replace(
+        settings,
+        ocr=replace(
+            settings.ocr,
+            local_url="http://localhost:8001/v1",
+            model="glm-ocr",
+            min_concurrency=2,
+            max_concurrency=8,
+        ),
+    )
+    gpu_snapshot = HardwareCapabilitySnapshot(
+        os_platform="linux",
+        architecture="x86_64",
+        cpu_physical_cores=16,
+        cpu_logical_cores=32,
+        memory_total_mb=128000,
+        memory_available_mb=96000,
+        gpu_devices=(
+            GPUDeviceCapability(
+                index=0,
+                vendor="nvidia",
+                name="A100",
+                memory_total_mb=40536,
+                driver_version="550.54.15",
+                runtime_version="12.4",
+            ),
+            GPUDeviceCapability(
+                index=1,
+                vendor="nvidia",
+                name="A100",
+                memory_total_mb=40536,
+                driver_version="550.54.15",
+                runtime_version="12.4",
+            ),
+            GPUDeviceCapability(
+                index=2,
+                vendor="nvidia",
+                name="A100",
+                memory_total_mb=40536,
+                driver_version="550.54.15",
+                runtime_version="12.4",
+            ),
+        ),
+        detection_sources=("nvidia-smi",),
+        detection_warnings=(),
+    )
+    monkeypatch.setattr("app.ocr_client.get_host_capabilities", lambda: gpu_snapshot)
+
+    probe = await probe_ocr_backend(settings=local_settings)
+
+    assert probe.backend.backend_id.endswith("-local-openai")
+    assert probe.backend.hardware_path == "gpu"
+    assert probe.capabilities["tuning_profile"] == "local-gpu-adaptive"
+    assert probe.capabilities["min_concurrency"] == 2
+    assert probe.capabilities["max_concurrency"] == 12
+    aliases = probe.capabilities["model_aliases"]
+    assert isinstance(aliases, list)
+    assert "glm-ocr" in aliases
+
+
+@pytest.mark.asyncio
+async def test_probe_ocr_backend_local_cpu_exposes_conservative_tuning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    local_settings = replace(
+        settings,
+        ocr=replace(
+            settings.ocr,
+            local_url="http://localhost:8001/v1",
+            model="glm-ocr",
+            min_concurrency=2,
+            max_concurrency=8,
+        ),
+    )
+    cpu_snapshot = HardwareCapabilitySnapshot(
+        os_platform="linux",
+        architecture="x86_64",
+        cpu_physical_cores=8,
+        cpu_logical_cores=16,
+        memory_total_mb=64000,
+        memory_available_mb=48000,
+        gpu_devices=(),
+        detection_sources=("psutil",),
+        detection_warnings=(),
+    )
+    monkeypatch.setattr("app.ocr_client.get_host_capabilities", lambda: cpu_snapshot)
+
+    probe = await probe_ocr_backend(settings=local_settings)
+
+    assert probe.backend.backend_id.endswith("-local-openai")
+    assert probe.backend.hardware_path == "cpu"
+    assert probe.capabilities["tuning_profile"] == "local-cpu-conservative"
+    assert probe.capabilities["min_concurrency"] == 1
+    assert probe.capabilities["max_concurrency"] == 4
+
+
+@pytest.mark.asyncio
+async def test_submit_tiles_local_cpu_retry_triggers_policy_reevaluation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    local_settings = replace(
+        settings,
+        ocr=replace(
+            settings.ocr,
+            local_url="http://localhost:8001/v1",
+            model="glm-ocr",
+            min_concurrency=1,
+            max_concurrency=2,
+        ),
+    )
+    cpu_snapshot = HardwareCapabilitySnapshot(
+        os_platform="linux",
+        architecture="x86_64",
+        cpu_physical_cores=8,
+        cpu_logical_cores=16,
+        memory_total_mb=64000,
+        memory_available_mb=48000,
+        gpu_devices=(),
+        detection_sources=("psutil",),
+        detection_warnings=(),
+    )
+    monkeypatch.setattr("app.ocr_client.get_host_capabilities", lambda: cpu_snapshot)
+
+    slept: list[float] = []
+    attempts = 0
+
+    async def _fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr("app.ocr_client._sleep", _fake_sleep)
+
+    def _handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503, json={"error": "busy"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "cpu-ok"}}]})
+
+    request = OCRRequest(tile_id="tile-local-cpu-001", tile_bytes=b"tile-local")
+    transport = httpx.MockTransport(_handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await submit_tiles(requests=[request], settings=local_settings, client=client)
+
+    assert slept == [3.0]
+    assert result.backend.hardware_path == "cpu"
+    assert result.markdown_chunks == ["cpu-ok"]
+    assert result.batches[0].attempts == 2
+    assert result.reevaluate_policy is True
+    assert result.reevaluation_reason_code == "policy.reeval.failure"
 
 
 @pytest.mark.asyncio
