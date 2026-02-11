@@ -8,7 +8,7 @@ import base64
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Sequence, cast
+from typing import Any, Sequence
 
 import httpx
 
@@ -20,6 +20,143 @@ REQUEST_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
 _BACKOFF_SCHEDULE = (3.0, 9.0)
 _MAX_ATTEMPTS = len(_BACKOFF_SCHEDULE) + 1
 _QUOTA_WARNING_RATIO = 0.7
+GLM_OPENAI_DEFAULT_MODEL = "glm-ocr"
+GLM_MAAS_DEFAULT_MODEL = "glm-ocr"
+GLM_MAAS_DEFAULT_API_URL = "https://open.bigmodel.cn/api/paas/v4/layout_parsing"
+GLM_DEFAULT_PROMPT = (
+    "Recognize the text in the image and output in Markdown format. Preserve the original "
+    "layout including headings, paragraphs, tables, and formulas."
+)
+
+
+def normalize_glm_file_reference(file_ref: str, *, mime_type: str = "image/png") -> str:
+    """Normalize GLM MaaS file input to URL or data URI.
+
+    GLM MaaS accepts either an HTTP(S) URL or a ``data:<mime>;base64,...`` URI for the
+    ``file`` field. This helper wraps raw base64 input into a standards-compliant data URI.
+    """
+
+    raw = file_ref.strip()
+    if not raw:
+        raise ValueError("GLM file reference cannot be empty")
+    if raw.startswith(("http://", "https://", "data:")):
+        return raw
+    return f"data:{mime_type};base64,{raw}"
+
+
+def build_glm_maas_payload(
+    *,
+    file_ref: str,
+    model: str = GLM_MAAS_DEFAULT_MODEL,
+) -> dict[str, Any]:
+    """Build request payload for GLM MaaS layout parsing API."""
+
+    return {
+        "model": model,
+        "file": normalize_glm_file_reference(file_ref),
+    }
+
+
+def build_glm_openai_chat_payload(
+    *,
+    image_b64: str,
+    model: str = GLM_OPENAI_DEFAULT_MODEL,
+    prompt: str = GLM_DEFAULT_PROMPT,
+    max_tokens: int = 4096,
+    temperature: float = 0.01,
+) -> dict[str, Any]:
+    """Build OpenAI-compatible vision payload for GLM self-hosted endpoints."""
+
+    image_ref = normalize_glm_file_reference(image_b64)
+    return {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": image_ref}},
+                ],
+            }
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+
+
+def extract_glm_openai_markdown(response_json: dict[str, Any]) -> str:
+    """Extract Markdown from OpenAI-compatible GLM OCR responses."""
+
+    choices = response_json.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            message = first.get("message")
+            if isinstance(message, dict):
+                content = _extract_openai_message_content(message.get("content"))
+                if content:
+                    return content
+            fallback_text = first.get("text")
+            if isinstance(fallback_text, str) and fallback_text.strip():
+                return fallback_text.strip()
+    for key in ("markdown", "content", "text"):
+        value = response_json.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    raise ValueError("GLM OpenAI response missing markdown/text content")
+
+
+def extract_glm_maas_markdown(response_json: dict[str, Any]) -> str:
+    """Extract Markdown from GLM MaaS responses.
+
+    The MaaS API may return markdown under top-level keys or nested result/data blocks.
+    """
+
+    content = _extract_glm_nested_text(response_json)
+    if content:
+        return content
+    raise ValueError("GLM MaaS response missing markdown/text content")
+
+
+def _extract_openai_message_content(content: Any) -> str | None:
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if not isinstance(content, list):
+        return None
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, dict):
+            text_value = item.get("text")
+            if isinstance(text_value, str) and text_value.strip():
+                parts.append(text_value.strip())
+    if not parts:
+        return None
+    return "\n".join(parts)
+
+
+def _extract_glm_nested_text(payload: Any) -> str | None:
+    if isinstance(payload, str):
+        text = payload.strip()
+        return text or None
+    if isinstance(payload, list):
+        for entry in payload:
+            nested = _extract_glm_nested_text(entry)
+            if nested:
+                return nested
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    for key in ("markdown", "content", "text", "result_markdown"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    for key in ("data", "result", "output"):
+        nested = _extract_glm_nested_text(payload.get(key))
+        if nested:
+            return nested
+    return None
 
 
 @dataclass(slots=True)
@@ -267,7 +404,7 @@ async def submit_tiles(
         )
         return SubmitTilesResult(markdown_chunks=[], batches=[], quota=empty_quota)
 
-    cfg = cast(Settings, settings or get_settings())
+    cfg = settings or get_settings()
     server_url = _select_server_url(cfg)
     endpoint = _normalize_endpoint(server_url)
 
