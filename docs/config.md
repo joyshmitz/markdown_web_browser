@@ -67,6 +67,15 @@ print(settings.ocr.server_url)
 Add any new variables to `.env.example`, document them here, and update the
 manifest schema if they need to be echoed downstream.
 
+### GLM-OCR Contract Notes (bd-361.1.2)
+- No new environment keys are required for contract validation work.
+- For **local OpenAI-compatible GLM-OCR** serving, existing `OCR_LOCAL_URL` can point at
+  a `/v1` endpoint (for example vLLM/SGLang with `glm-ocr` served model name).
+- For **GLM MaaS** contract validation, treat the request as a separate provider contract:
+  `{"model":"glm-ocr","file":"<url-or-data-uri>"}` where `file` is URL or data URI.
+- During adapter rollout beads, manifest metadata must explicitly capture
+  backend mode (`maas` vs `openai-compatible`) and normalized reason codes.
+
 ### Validating configuration
 - Run `uv run python scripts/check_env.py` to verify all required variables are present.
   Use `--json` for machine-readable output in CI.

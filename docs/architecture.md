@@ -48,6 +48,26 @@ guarded hyphenation, table seam rules)
 - **Rate limit** via token‑bucket per host; retry 408/429/5xx with exponential backoff + jitter; 4xx (non‑429) are terminal per tile. 
 - **Model policy** in `docs/models.yaml` controls long‑side px, parallelism, FP8 preference, and prompt template. Default: `olmOCR-2-7B-1025-FP8`. 
 
+#### GLM-OCR contract map (bd-361.1.2)
+- **MaaS mode** (`https://open.bigmodel.cn/api/paas/v4/layout_parsing`):
+  - Request contract: `{"model":"glm-ocr","file":"<url-or-data-uri>"}`.
+  - `file` must be either HTTP(S) URL or `data:<mime>;base64,...`; raw base64 must be wrapped.
+  - Response normalization should accept top-level and nested `markdown/content/text` fields.
+- **Local OpenAI-compatible mode** (`/v1/chat/completions` on vLLM/SGLang):
+  - Request contract mirrors OpenAI vision chat:
+    - `messages[0].content` includes one text prompt and one `image_url` data URI.
+    - Typical model identifier is `glm-ocr` (or deployment alias).
+  - Response normalization should parse string content and list-of-content formats.
+- **Optional Ollama mode** (`/api/generate`) is a deployment edge path:
+  - Keep explicit because request/response format differs from OpenAI-compatible mode.
+- **Current pipeline transform from tile bytes**:
+  - `tile.png_bytes` → base64 string → data URI → backend-specific payload.
+  - This keeps capture/tiling code backend-agnostic while preserving deterministic provenance.
+- **Known risks to capture in manifests/events**:
+  - Payload size and timeout variance across providers.
+  - Token budget limits on long/complex pages.
+  - Output shape drift (`string` vs nested objects/lists) requiring robust normalization.
+
 ### Stitching
 - Overlap de-dup using RapidFuzz on trailing/leading line windows; fall back to difflib only when needed. 
 - DOM-guided heading normalization uses the captured DOM outline so H-levels match the source document (we still emit `<!-- normalized-heading: … -->` comments for provenance).

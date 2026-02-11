@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 from typing import Iterator
 
@@ -9,7 +10,16 @@ import pytest
 from PIL import Image, ImageDraw, ImageFont
 from playwright.async_api import async_playwright
 
-from app.ocr_client import OCRRequest, reset_quota_tracker, submit_tiles
+from app.ocr_client import (
+    OCRRequest,
+    build_glm_maas_payload,
+    build_glm_openai_chat_payload,
+    extract_glm_maas_markdown,
+    extract_glm_openai_markdown,
+    normalize_glm_file_reference,
+    reset_quota_tracker,
+    submit_tiles,
+)
 from app.settings import get_settings, load_config
 
 
@@ -69,6 +79,75 @@ def create_real_test_image(width: int = 1280, height: int = 720, text: str = "Te
     return img_bytes.getvalue()
 
 
+def test_normalize_glm_file_reference_wraps_raw_base64() -> None:
+    raw = base64.b64encode(b"abc123").decode("ascii")
+    normalized = normalize_glm_file_reference(raw)
+    assert normalized == f"data:image/png;base64,{raw}"
+
+
+def test_normalize_glm_file_reference_keeps_urls_and_data_uris() -> None:
+    url_value = "https://example.com/image.png"
+    data_value = "data:image/png;base64,AAA="
+    assert normalize_glm_file_reference(url_value) == url_value
+    assert normalize_glm_file_reference(data_value) == data_value
+
+
+def test_build_glm_maas_payload_wraps_raw_base64_file() -> None:
+    raw = base64.b64encode(b"tile-bytes").decode("ascii")
+    payload = build_glm_maas_payload(file_ref=raw, model="glm-ocr")
+    assert payload["model"] == "glm-ocr"
+    assert payload["file"] == f"data:image/png;base64,{raw}"
+
+
+def test_build_glm_openai_chat_payload_shapes_contract() -> None:
+    raw = base64.b64encode(b"tile-bytes").decode("ascii")
+    payload = build_glm_openai_chat_payload(image_b64=raw, model="glm-ocr")
+    assert payload["model"] == "glm-ocr"
+    assert payload["max_tokens"] == 4096
+    assert payload["temperature"] == pytest.approx(0.01)
+    messages = payload["messages"]
+    assert isinstance(messages, list) and len(messages) == 1
+    content = messages[0]["content"]
+    assert content[0]["type"] == "text"
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"] == f"data:image/png;base64,{raw}"
+
+
+def test_extract_glm_openai_markdown_from_string_content() -> None:
+    response = {"choices": [{"message": {"content": "# Parsed"}}]}
+    assert extract_glm_openai_markdown(response) == "# Parsed"
+
+
+def test_extract_glm_openai_markdown_from_content_list() -> None:
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "Line 1"},
+                        {"type": "text", "text": "Line 2"},
+                    ]
+                }
+            }
+        ]
+    }
+    assert extract_glm_openai_markdown(response) == "Line 1\nLine 2"
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"markdown": "Top-level markdown"}, "Top-level markdown"),
+        ({"data": {"result": {"content": "Nested content"}}}, "Nested content"),
+        ({"result": [{"text": "From list"}]}, "From list"),
+    ],
+)
+def test_extract_glm_maas_markdown_common_response_shapes(
+    payload: dict[str, object], expected: str
+) -> None:
+    assert extract_glm_maas_markdown(payload) == expected
+
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(not OLMOCR_API_KEY, reason="Requires real OCR API key")
 async def test_real_ocr_api_single_image():
@@ -85,14 +164,11 @@ async def test_real_ocr_api_single_image():
     result = await submit_tiles(requests=[request], settings=settings)
 
     # Verify real response
-    assert result.telemetry is not None
-    assert result.telemetry.total_requests == 1
-    assert result.telemetry.total_tiles == 1
-    assert result.markdown_sections is not None
-    assert len(result.markdown_sections) == 1
+    assert len(result.batches) == 1
+    assert len(result.markdown_chunks) == 1
 
     # The real OCR should detect some text
-    markdown = result.markdown_sections[0]
+    markdown = result.markdown_chunks[0]
     assert len(markdown) > 0
     # Real OCR might detect "Hello" or "OCR" or "API" from our test image
     # but we can't predict exact output
@@ -114,13 +190,11 @@ async def test_real_ocr_api_multiple_images():
     result = await submit_tiles(requests=requests, settings=settings)
 
     # Verify real response
-    assert result.telemetry is not None
-    assert result.telemetry.total_tiles == 3
-    assert result.markdown_sections is not None
-    assert len(result.markdown_sections) == 3
+    assert len(result.batches) == 3
+    assert len(result.markdown_chunks) == 3
 
     # Each section should have some content from real OCR
-    for section in result.markdown_sections:
+    for section in result.markdown_chunks:
         assert len(section) > 0
 
 
@@ -152,12 +226,11 @@ async def test_real_ocr_api_with_actual_webpage_screenshot():
     result = await submit_tiles(requests=[request], settings=settings)
 
     # Verify real response
-    assert result.telemetry is not None
-    assert result.markdown_sections is not None
-    assert len(result.markdown_sections) == 1
+    assert len(result.batches) == 1
+    assert len(result.markdown_chunks) == 1
 
     # Real OCR should detect content from example.com
-    markdown = result.markdown_sections[0]
+    markdown = result.markdown_chunks[0]
     assert len(markdown) > 0
     # example.com has "Example Domain" text that should be detected
 
@@ -177,7 +250,7 @@ async def test_real_ocr_api_error_handling():
     result = await submit_tiles(requests=[request], settings=settings)
 
     # Should handle gracefully even with weird input
-    assert result.telemetry is not None
+    assert len(result.batches) == 1
 
 
 @pytest.mark.asyncio
@@ -196,10 +269,9 @@ async def test_real_ocr_api_concurrent_requests():
     result = await submit_tiles(requests=requests, settings=settings)
 
     # Verify all were processed
-    assert result.telemetry is not None
-    assert result.telemetry.total_tiles == 5
-    assert len(result.markdown_sections) == 5
+    assert len(result.batches) == 5
+    assert len(result.markdown_chunks) == 5
 
     # All should have content
-    for section in result.markdown_sections:
+    for section in result.markdown_chunks:
         assert len(section) > 0

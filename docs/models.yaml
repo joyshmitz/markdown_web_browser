@@ -21,6 +21,34 @@ olmOCR-2-7B-1025:
   max_tiles_in_flight: 6
   prompt_template: "olmocr_v4"
 
+# GLM-OCR contracts validated in bd-361.1.2. Keep disabled until adapter rollout beads land.
+GLM-OCR-MaaS:
+  provider: "zai"
+  display_name: "GLM-OCR (MaaS)"
+  long_side_px: 1288
+  fp8_preferred: false
+  max_tiles_in_flight: 8
+  prompt_template: "glm_ocr_default"
+  disabled: true
+  notes: "Hosted layout_parsing API; accepts URL or data URI in the file field."
+  refs:
+    - "github:zai-org/GLM-OCR"
+    - "zai:docs-vlm-glm-ocr"
+
+GLM-OCR-Local-OpenAI:
+  provider: "zai"
+  display_name: "GLM-OCR (Local OpenAI-compatible)"
+  long_side_px: 1288
+  fp8_preferred: false
+  max_tiles_in_flight: 8
+  prompt_template: "glm_ocr_default"
+  disabled: true
+  notes: "Self-hosted vLLM/SGLang endpoint at /v1/chat/completions."
+  refs:
+    - "github:zai-org/GLM-OCR"
+    - "sglang:openai-compatible"
+    - "vllm:openai-compatible"
+
 # Optional alternates (keep disabled by default; parity-tested in benches)
 GOT-OCR-2:
   provider: "open"         # fill in when wired
