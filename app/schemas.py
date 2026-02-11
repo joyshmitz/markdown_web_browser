@@ -146,8 +146,28 @@ class ManifestEnvironment(BaseModel):
         description="Selectors masked during screenshot capture",
     )
     ocr_model: str = Field(description="olmOCR model identifier")
+    ocr_provider: str | None = Field(
+        default=None,
+        description="OCR provider family (for example olmocr or glm-ocr)",
+    )
     ocr_use_fp8: bool = Field(description="Whether FP8 acceleration is enabled")
     ocr_concurrency: ConcurrencyWindow = Field(description="Concurrency envelope for OCR requests")
+    ocr_backend_id: str = Field(
+        default="olmocr-remote-openai",
+        description="Resolved backend identifier used for OCR requests",
+    )
+    ocr_backend_mode: str = Field(
+        default="openai-compatible",
+        description="Backend protocol mode (for example openai-compatible or maas)",
+    )
+    ocr_hardware_path: str = Field(
+        default="remote",
+        description="Hardware execution path (remote, local-auto, gpu, cpu)",
+    )
+    ocr_fallback_chain: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Ordered backend fallback chain considered by runtime policy",
+    )
 
 
 class ManifestWarning(BaseModel):
@@ -230,6 +250,35 @@ class ManifestMetadata(BaseModel):
 
     environment: ManifestEnvironment
     timings: ManifestTimings = Field(default_factory=ManifestTimings)
+    backend_id: str | None = Field(
+        default=None,
+        description="Resolved OCR backend identifier for this run",
+    )
+    backend_mode: str | None = Field(
+        default=None,
+        description="Resolved OCR backend mode for this run",
+    )
+    hardware_path: str | None = Field(
+        default=None,
+        description="Hardware path selected for OCR execution",
+    )
+    backend_reason_codes: list[str] = Field(
+        default_factory=list,
+        description="Normalized OCR policy reason codes explaining backend selection",
+    )
+    backend_reevaluate_after_s: int | None = Field(
+        default=None,
+        ge=1,
+        description="Suggested interval for policy re-evaluation/failover checks",
+    )
+    fallback_chain: list[str] = Field(
+        default_factory=list,
+        description="Ordered fallback backend IDs evaluated by OCR runtime policy",
+    )
+    hardware_capabilities: dict[str, Any] | None = Field(
+        default=None,
+        description="Detected host CPU/GPU capability snapshot used by runtime policy",
+    )
     tiles_total: int | None = Field(
         default=None,
         ge=0,
@@ -310,6 +359,27 @@ class ManifestMetadata(BaseModel):
         default=None,
         description="Aggregated deduplication statistics for quick diagnostics",
     )
+
+    @model_validator(mode="after")
+    def _normalize_backend_fields(self) -> ManifestMetadata:
+        """Backfill top-level backend fields from the environment block.
+
+        This keeps contract-v2 manifests explicit while preserving compatibility with
+        older payload shapes that only include environment metadata.
+        """
+
+        if self.backend_id is None:
+            self.backend_id = self.environment.ocr_backend_id
+        if self.backend_mode is None:
+            self.backend_mode = self.environment.ocr_backend_mode
+        if self.hardware_path is None:
+            self.hardware_path = self.environment.ocr_hardware_path
+        if not self.fallback_chain:
+            fallback = list(self.environment.ocr_fallback_chain)
+            if not fallback and self.backend_id:
+                fallback = [self.backend_id]
+            self.fallback_chain = fallback
+        return self
 
 
 class EmbeddingSearchRequest(BaseModel):

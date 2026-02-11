@@ -28,8 +28,13 @@ def test_manifest_metadata_accepts_blocklist_and_warnings() -> None:
             screenshot_style_hash="dev-sweeps-v1",
             screenshot_mask_selectors=(),
             ocr_model="olmOCR-2-7B-1025-FP8",
+            ocr_provider="olmocr",
             ocr_use_fp8=True,
             ocr_concurrency=ConcurrencyWindow(min=2, max=8),
+            ocr_backend_id="olmocr-remote-openai",
+            ocr_backend_mode="openai-compatible",
+            ocr_hardware_path="remote",
+            ocr_fallback_chain=("olmocr-remote-openai",),
         ),
         blocklist_version="2025-11-07",
         blocklist_hits={"#onetrust-consent-sdk": 2},
@@ -64,6 +69,14 @@ def test_manifest_metadata_accepts_blocklist_and_warnings() -> None:
         ocr_quota=ManifestOCRQuota(
             limit=500000, used=200000, threshold_ratio=0.7, warning_triggered=False
         ),
+        hardware_capabilities={
+            "cpu_logical_cores": 16,
+            "gpu_count": 1,
+            "has_gpu": True,
+            "preferred_hardware_path": "gpu",
+        },
+        backend_reason_codes=["policy.local.gpu-preferred"],
+        backend_reevaluate_after_s=120,
         dom_assists=[
             {
                 "tile_index": 0,
@@ -86,3 +99,11 @@ def test_manifest_metadata_accepts_blocklist_and_warnings() -> None:
     assert manifest.ocr_quota is not None
     assert manifest.ocr_quota.limit == 500000
     assert manifest.dom_assists[0]["reason"] == "low-alpha"
+    assert manifest.backend_id == "olmocr-remote-openai"
+    assert manifest.backend_mode == "openai-compatible"
+    assert manifest.hardware_path == "remote"
+    assert manifest.fallback_chain == ["olmocr-remote-openai"]
+    assert manifest.backend_reason_codes == ["policy.local.gpu-preferred"]
+    assert manifest.backend_reevaluate_after_s == 120
+    assert manifest.hardware_capabilities is not None
+    assert manifest.hardware_capabilities["gpu_count"] == 1

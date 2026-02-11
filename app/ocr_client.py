@@ -8,11 +8,19 @@ import base64
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Protocol, Sequence
 
 import httpx
 
-from app.settings import Settings, get_settings
+from app.hardware import HardwareCapabilitySnapshot, get_host_capabilities
+from app.ocr_policy import (
+    BACKEND_MODE_MAAS,
+    BACKEND_MODE_OPENAI_COMPATIBLE,
+    OCRBackendCandidate,
+    OCRPolicyInputs,
+    select_ocr_backend,
+)
+from app.settings import Settings, get_settings, resolve_ocr_backend_defaults
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ENDPOINT_SUFFIX = "/chat/completions"  # OpenAI-compatible endpoint
@@ -27,6 +35,65 @@ GLM_DEFAULT_PROMPT = (
     "Recognize the text in the image and output in Markdown format. Preserve the original "
     "layout including headings, paragraphs, tables, and formulas."
 )
+@dataclass(slots=True, frozen=True)
+class OCRBackendRuntime:
+    """Normalized OCR backend identity captured in manifests/telemetry."""
+
+    backend_id: str
+    backend_mode: str
+    hardware_path: str
+    fallback_chain: tuple[str, ...]
+    provider: str
+    reason_codes: tuple[str, ...] = ()
+    reevaluate_after_s: int = 120
+
+
+@dataclass(slots=True, frozen=True)
+class OCRBackendProbe:
+    """Static backend capabilities resolved from runtime configuration."""
+
+    backend: OCRBackendRuntime
+    endpoint: str
+    model: str
+    capabilities: dict[str, object]
+
+
+@dataclass(slots=True, frozen=True)
+class OCRBackendHealth:
+    """Best-effort backend health check metadata."""
+
+    backend: OCRBackendRuntime
+    healthy: bool
+    status_code: int | None = None
+    latency_ms: int | None = None
+    reason_code: str | None = None
+    detail: str | None = None
+
+
+class OCRBackend(Protocol):
+    """Backend contract used by policy/autopilot and adapter implementations."""
+
+    async def submit(
+        self,
+        *,
+        requests: Sequence["OCRRequest"],
+        settings: Settings | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> "SubmitTilesResult": ...
+
+    async def probe(
+        self,
+        *,
+        settings: Settings | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> OCRBackendProbe: ...
+
+    async def health(
+        self,
+        *,
+        settings: Settings | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> OCRBackendHealth: ...
 
 
 def normalize_glm_file_reference(file_ref: str, *, mime_type: str = "image/png") -> str:
@@ -190,6 +257,18 @@ class OCRQuotaStatus:
     warning_triggered: bool
 
 
+def _default_backend_runtime() -> OCRBackendRuntime:
+    return OCRBackendRuntime(
+        backend_id="olmocr-remote-openai",
+        backend_mode=BACKEND_MODE_OPENAI_COMPATIBLE,
+        hardware_path="remote",
+        fallback_chain=("olmocr-remote-openai",),
+        provider="olmocr",
+        reason_codes=("policy.remote.fallback",),
+        reevaluate_after_s=120,
+    )
+
+
 @dataclass(slots=True)
 class SubmitTilesResult:
     """Return value for :func:`submit_tiles` with telemetry + quota state."""
@@ -197,6 +276,8 @@ class SubmitTilesResult:
     markdown_chunks: list[str]
     batches: list[OCRBatchTelemetry]
     quota: OCRQuotaStatus
+    backend: OCRBackendRuntime = field(default_factory=_default_backend_runtime)
+    host_capabilities: dict[str, object] | None = None
     autotune: "OcrAutotuneSnapshot | None" = None
 
 
@@ -390,6 +471,136 @@ class _AdaptiveLimiter:
         return self._controller.snapshot()
 
 
+def resolve_ocr_backend(
+    settings: Settings | None = None,
+    *,
+    capabilities: HardwareCapabilitySnapshot | None = None,
+) -> OCRBackendRuntime:
+    """Return normalized backend identity from runtime settings."""
+
+    cfg = settings or get_settings()
+    capability_snapshot = capabilities or get_host_capabilities()
+    backend_id, backend_mode, hardware_path, fallback_chain, provider = (
+        resolve_ocr_backend_defaults(cfg.ocr)
+    )
+    ordered_ids = [backend_id, *fallback_chain]
+    deduped_ids: list[str] = []
+    for candidate_id in ordered_ids:
+        if candidate_id and candidate_id not in deduped_ids:
+            deduped_ids.append(candidate_id)
+    policy_candidates: list[OCRBackendCandidate] = []
+    for candidate_id in deduped_ids:
+        candidate_mode = backend_mode if candidate_id == backend_id else _mode_from_backend_id(
+            candidate_id
+        )
+        candidate_hardware = _hardware_path_for_candidate(
+            candidate_id,
+            default_hardware_path=hardware_path,
+            preferred_local_hardware=capability_snapshot.preferred_hardware_path,
+        )
+        policy_candidates.append(
+            OCRBackendCandidate(
+                backend_id=candidate_id,
+                backend_mode=candidate_mode,
+                hardware_path=candidate_hardware,
+                healthy=None,
+            )
+        )
+    decision = select_ocr_backend(OCRPolicyInputs(candidates=tuple(policy_candidates)))
+    effective_chain = (decision.backend_id, *decision.fallback_chain)
+    return OCRBackendRuntime(
+        backend_id=decision.backend_id,
+        backend_mode=decision.backend_mode,
+        hardware_path=decision.hardware_path,
+        fallback_chain=effective_chain,
+        provider=provider,
+        reason_codes=decision.reason_codes,
+        reevaluate_after_s=decision.reevaluate_after_s,
+    )
+
+
+async def probe_ocr_backend(
+    *,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> OCRBackendProbe:
+    """Resolve backend endpoint + static capabilities without sending OCR payloads."""
+
+    _ = client  # Reserved for future adapter-specific probe requests.
+    cfg = settings or get_settings()
+    capabilities_snapshot = get_host_capabilities()
+    backend = resolve_ocr_backend(cfg, capabilities=capabilities_snapshot)
+    endpoint = _normalize_endpoint(
+        _select_server_url(cfg),
+        backend_mode=backend.backend_mode,
+    )
+    capabilities: dict[str, object] = {
+        "supports_submit": backend.backend_mode == BACKEND_MODE_OPENAI_COMPATIBLE,
+        "supports_probe": True,
+        "supports_health": True,
+        "max_batch_tiles": cfg.ocr.max_batch_tiles,
+        "max_batch_bytes": cfg.ocr.max_batch_bytes,
+        "min_concurrency": cfg.ocr.min_concurrency,
+        "max_concurrency": cfg.ocr.max_concurrency,
+        "reason_codes": list(backend.reason_codes),
+        "reevaluate_after_s": backend.reevaluate_after_s,
+        "host_capabilities": capabilities_snapshot.to_dict(),
+    }
+    return OCRBackendProbe(
+        backend=backend,
+        endpoint=endpoint,
+        model=cfg.ocr.model,
+        capabilities=capabilities,
+    )
+
+
+async def healthcheck_ocr_backend(
+    *,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> OCRBackendHealth:
+    """Run a best-effort liveness check for the configured OCR backend endpoint."""
+
+    probe = await probe_ocr_backend(settings=settings, client=client)
+    cfg = settings or get_settings()
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=REQUEST_TIMEOUT, http2=True)
+    headers: dict[str, str] = {}
+    if cfg.ocr.api_key and not cfg.ocr.local_url:
+        headers["Authorization"] = f"Bearer {cfg.ocr.api_key}"
+
+    status_code: int | None = None
+    latency_ms: int | None = None
+    reason_code: str | None = None
+    detail: str | None = None
+    healthy = False
+    probe_url = _health_probe_url(probe.endpoint, backend_mode=probe.backend.backend_mode)
+    try:
+        started = time.perf_counter()
+        response = await http_client.get(probe_url, headers=headers)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        status_code = response.status_code
+        # Treat auth/not-found/method-not-allowed as reachable in infra.
+        healthy = status_code < 500
+        if not healthy:
+            reason_code = f"http-{status_code}"
+            detail = f"Backend health probe to {probe_url} returned {status_code}."
+    except Exception as exc:  # pragma: no cover - network dependent
+        reason_code = "network-error"
+        detail = str(exc)
+    finally:
+        if owns_client:
+            await http_client.aclose()
+    return OCRBackendHealth(
+        backend=probe.backend,
+        healthy=healthy,
+        status_code=status_code,
+        latency_ms=latency_ms,
+        reason_code=reason_code,
+        detail=detail,
+    )
+
+
 async def submit_tiles(
     *,
     requests: Sequence[OCRRequest],
@@ -398,15 +609,29 @@ async def submit_tiles(
 ) -> SubmitTilesResult:
     """Submit tiles to the configured olmOCR endpoint and return Markdown + telemetry."""
 
+    cfg = settings or get_settings()
+    capabilities_snapshot = get_host_capabilities()
+    backend = resolve_ocr_backend(cfg, capabilities=capabilities_snapshot)
+    if backend.backend_mode != BACKEND_MODE_OPENAI_COMPATIBLE:
+        raise NotImplementedError(
+            "Configured OCR backend mode is not wired for tile submission yet: "
+            f"{backend.backend_mode}"
+        )
+
     if not requests:
         empty_quota = OCRQuotaStatus(
             limit=None, used=None, threshold_ratio=_QUOTA_WARNING_RATIO, warning_triggered=False
         )
-        return SubmitTilesResult(markdown_chunks=[], batches=[], quota=empty_quota)
+        return SubmitTilesResult(
+            markdown_chunks=[],
+            batches=[],
+            quota=empty_quota,
+            backend=backend,
+            host_capabilities=capabilities_snapshot.to_dict(),
+        )
 
-    cfg = settings or get_settings()
     server_url = _select_server_url(cfg)
-    endpoint = _normalize_endpoint(server_url)
+    endpoint = _normalize_endpoint(server_url, backend_mode=backend.backend_mode)
 
     headers = {"Content-Type": "application/json"}
     if cfg.ocr.api_key and not cfg.ocr.local_url:
@@ -463,6 +688,8 @@ async def submit_tiles(
         markdown_chunks=markdown_chunks,
         batches=telemetry,
         quota=quota_status,
+        backend=backend,
+        host_capabilities=capabilities_snapshot.to_dict(),
         autotune=limiter.snapshot(),
     )
 
@@ -697,12 +924,50 @@ def _select_server_url(settings: Settings) -> str:
     return settings.ocr.server_url
 
 
-def _normalize_endpoint(base: str) -> str:
+def _normalize_endpoint(base: str, *, backend_mode: str = BACKEND_MODE_OPENAI_COMPATIBLE) -> str:
     base = base.rstrip("/")
+    if backend_mode == BACKEND_MODE_MAAS:
+        return base
     if base.endswith(DEFAULT_ENDPOINT_SUFFIX.strip("/")):
         return base
     return f"{base}{DEFAULT_ENDPOINT_SUFFIX}"
 
 
+def _health_probe_url(endpoint: str, *, backend_mode: str) -> str:
+    """Return a low-cost URL used for connectivity checks."""
+
+    endpoint = endpoint.rstrip("/")
+    if backend_mode == BACKEND_MODE_MAAS:
+        return endpoint
+    if endpoint.endswith("/chat/completions"):
+        return f"{endpoint.removesuffix('/chat/completions')}/models"
+    if endpoint.endswith("/v1"):
+        return f"{endpoint}/models"
+    if endpoint.endswith("/models"):
+        return endpoint
+    return f"{endpoint}/models"
+
+
 async def _sleep(delay: float) -> None:
     await asyncio.sleep(delay)
+
+
+def _mode_from_backend_id(backend_id: str) -> str:
+    if backend_id.endswith("-maas"):
+        return BACKEND_MODE_MAAS
+    return BACKEND_MODE_OPENAI_COMPATIBLE
+
+
+def _hardware_path_for_candidate(
+    backend_id: str,
+    *,
+    default_hardware_path: str,
+    preferred_local_hardware: str,
+) -> str:
+    if backend_id.endswith("-local-openai"):
+        return preferred_local_hardware
+    if backend_id.endswith("-maas"):
+        return "remote"
+    if default_hardware_path == "local-auto":
+        return "remote"
+    return default_hardware_path if backend_id.endswith("-openai") else "remote"

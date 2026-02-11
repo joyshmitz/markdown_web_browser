@@ -64,6 +64,10 @@ class RunRecord(SQLModel, table=True):
     manifest_path: str
     ocr_provider: str | None = None
     ocr_model: str | None = None
+    backend_id: str | None = None
+    backend_mode: str | None = None
+    hardware_path: str | None = None
+    fallback_chain: list[str] | None = Field(default=None, sa_column=Column(SQLITE_JSON))
     cft_label: str | None = None
     cft_version: str | None = None
     playwright_version: str | None = None
@@ -231,6 +235,10 @@ class Store:
         """Add newly introduced run columns when upgrading existing databases."""
 
         expected_types = {
+            "backend_id": "TEXT",
+            "backend_mode": "TEXT",
+            "hardware_path": "TEXT",
+            "fallback_chain": "JSON",
             "sweep_shrink_events": "INTEGER",
             "sweep_retry_attempts": "INTEGER",
             "sweep_overlap_pairs": "INTEGER",
@@ -335,6 +343,10 @@ class Store:
             manifest_path=source.manifest_path,
             ocr_provider=source.ocr_provider,
             ocr_model=source.ocr_model,
+            backend_id=source.backend_id,
+            backend_mode=source.backend_mode,
+            hardware_path=source.hardware_path,
+            fallback_chain=list(source.fallback_chain) if source.fallback_chain else None,
             cft_label=source.cft_label,
             cft_version=source.cft_version,
             playwright_version=source.playwright_version,
@@ -745,6 +757,12 @@ def _apply_manifest_metadata(record: RunRecord, manifest: Mapping[str, object] |
         if coerced is not None:
             setattr(record, attr, coerced)
 
+    def _set_chain(value: Any) -> None:
+        if isinstance(value, (list, tuple)):
+            chain = [str(entry) for entry in value if str(entry).strip()]
+            if chain:
+                record.fallback_chain = chain
+
     environment = manifest_dict.get("environment")
     if isinstance(environment, Mapping):
         _set("cft_version", environment.get("cft_version"))
@@ -755,6 +773,10 @@ def _apply_manifest_metadata(record: RunRecord, manifest: Mapping[str, object] |
         _set("screenshot_style_hash", environment.get("screenshot_style_hash"))
         _set("ocr_model", environment.get("ocr_model"))
         _set("ocr_provider", environment.get("ocr_provider"))
+        _set("backend_id", environment.get("ocr_backend_id"))
+        _set("backend_mode", environment.get("ocr_backend_mode"))
+        _set("hardware_path", environment.get("ocr_hardware_path"))
+        _set_chain(environment.get("ocr_fallback_chain"))
         viewport = environment.get("viewport")
         if isinstance(viewport, Mapping):
             _set_int("device_scale_factor", viewport.get("device_scale_factor"))
@@ -768,6 +790,26 @@ def _apply_manifest_metadata(record: RunRecord, manifest: Mapping[str, object] |
         _set("ocr_model", manifest_dict.get("model"))
         _set("ocr_provider", manifest_dict.get("ocr_provider"))
         _set_int("device_scale_factor", manifest_dict.get("device_scale_factor"))
+    _set("backend_id", manifest_dict.get("backend_id"))
+    _set("backend_mode", manifest_dict.get("backend_mode"))
+    _set("hardware_path", manifest_dict.get("hardware_path"))
+    _set_chain(manifest_dict.get("fallback_chain"))
+    if record.backend_id is None:
+        provider = (
+            str(record.ocr_provider).strip().lower()
+            if isinstance(record.ocr_provider, str)
+            else None
+        )
+        if provider not in {"olmocr", "glm-ocr"}:
+            provider = None
+        model = str(record.ocr_model).strip().lower() if isinstance(record.ocr_model, str) else ""
+        inferred_provider = "glm-ocr" if "glm-ocr" in model else (provider or "olmocr")
+        inferred_backend = f"{inferred_provider}-remote-openai"
+        record.backend_id = inferred_backend
+        record.backend_mode = record.backend_mode or "openai-compatible"
+        record.hardware_path = record.hardware_path or "remote"
+        if not record.fallback_chain:
+            record.fallback_chain = [inferred_backend]
     _set("profile_id", manifest_dict.get("profile_id"))
     _set("cache_key", manifest_dict.get("cache_key"))
 

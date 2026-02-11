@@ -89,7 +89,7 @@ guarded hyphenation, table seam rules)
 - `artifact/tiles/tile_XXXX.png`
 - `out.md` with `<!-- source: tile_i, y=..., height=..., sha256=..., scale=..., path=..., highlight=/jobs/... -->`
 - `links.json` (anchors/forms/headings/meta/landmarks)
-- `manifest.json` (CfT label+build, DPR, viewport, policies, timings, hashes)
+- `manifest.json` (CfT label+build, DPR, viewport, policies, OCR backend provenance + reason codes, hardware capability snapshot, timings, hashes)
 - `section_embeddings` (sqlite-vec vectors) exposed via `/jobs/{id}/embeddings/search`
 
 ## Agent starter helpers
@@ -107,7 +107,8 @@ Both scripts live under `scripts/agents/`, are Typer CLIs, and share helpers (`s
   itself lets tooling jump straight from `_build_cache_key()` → filesystem path without
   scraping SQLite first.
 - **SQLite metadata (`RUNS_DB_PATH`)** — `RunRecord`/`LinkRecord` tables capture CfT
-  label/build, screenshot style hash, OCR policy, concurrency window, timing metrics,
+  label/build, screenshot style hash, OCR policy, backend mode/path/fallback-chain,
+  concurrency window, timing metrics,
   plus capture breadcrumbs (shrink/retry counts, overlap ratios, validation failure counts)
   so dashboards can surface seam health without scraping manifests. The `section_embeddings`
   virtual table (sqlite-vec) stores

@@ -98,6 +98,9 @@ in `app/schemas.py` (see `ManifestEnvironment`, `ManifestTimings`, and
 * `overlap_match_ratio` shortcut so dashboards/CLIs can summarize seam health without unpacking the stats block
 * `validation_failures` array that records any tile integrity errors caught by `validate_tiles()` and feeds the warning log even when no other warnings fired
 * OCR model + FP8 status + concurrency window
+* OCR backend provenance (`backend_id`, `backend_mode`, `hardware_path`, `fallback_chain`) so adapters/policy decisions are auditable per run
+* Policy trace metadata (`backend_reason_codes`, `backend_reevaluate_after_s`) so failover behavior is explainable and replayable
+* Host hardware capability snapshot (`hardware_capabilities`) so policy decisions can be replayed against the detected CPU/GPU inventory
 * OCR request telemetry (`ocr_batches`) including latency, HTTP status, request IDs, and payload sizes, plus hosted quota status (`ocr_quota`) so ops can correlate throttling with DOM complexity
 * Timing metrics (`capture_ms`, `ocr_ms`, `stitch_ms`, `total_ms`) once stages
   execute
@@ -133,6 +136,18 @@ in `app/schemas.py` (see `ManifestEnvironment`, `ManifestTimings`, and
     "ocr_ms": 4230,
     "stitch_ms": 510,
     "total_ms": 6220
+  },
+  "backend_id": "olmocr-remote-openai",
+  "backend_mode": "openai-compatible",
+  "hardware_path": "remote",
+  "backend_reason_codes": ["policy.remote.fallback"],
+  "backend_reevaluate_after_s": 120,
+  "fallback_chain": ["olmocr-remote-openai"],
+  "hardware_capabilities": {
+    "cpu_logical_cores": 16,
+    "gpu_count": 1,
+    "has_gpu": true,
+    "preferred_hardware_path": "gpu"
   },
   "sweep_stats": {
     "sweep_count": 6,

@@ -90,6 +90,13 @@ class CaptureManifest:
     profile_id: str | None
     cache_key: str | None = None
     cache_hit: bool = False
+    backend_id: str | None = None
+    backend_mode: str | None = None
+    hardware_path: str | None = None
+    backend_reason_codes: list[str] = field(default_factory=list)
+    backend_reevaluate_after_s: int | None = None
+    fallback_chain: list[str] = field(default_factory=list)
+    hardware_capabilities: dict[str, object] | None = None
     ocr_ms: int | None = None
     stitch_ms: int | None = None
     ocr_batches: list[dict[str, object]] = field(default_factory=list)

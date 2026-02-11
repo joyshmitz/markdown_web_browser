@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 import io
 from typing import Iterator
 
+import httpx
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 from playwright.async_api import async_playwright
 
+from app.hardware import GPUDeviceCapability, HardwareCapabilitySnapshot, reset_host_capabilities_cache
 from app.ocr_client import (
     OCRRequest,
     build_glm_maas_payload,
     build_glm_openai_chat_payload,
     extract_glm_maas_markdown,
     extract_glm_openai_markdown,
+    healthcheck_ocr_backend,
     normalize_glm_file_reference,
+    probe_ocr_backend,
     reset_quota_tracker,
+    resolve_ocr_backend,
     submit_tiles,
 )
 from app.settings import get_settings, load_config
@@ -31,8 +37,10 @@ OLMOCR_API_KEY = decouple_config("OLMOCR_API_KEY", default="")
 @pytest.fixture(autouse=True)
 def _reset_quota_tracker_fixture() -> Iterator[None]:
     reset_quota_tracker()
+    reset_host_capabilities_cache()
     yield
     reset_quota_tracker()
+    reset_host_capabilities_cache()
 
 
 def create_real_test_image(width: int = 1280, height: int = 720, text: str = "Test") -> bytes:
@@ -146,6 +154,66 @@ def test_extract_glm_maas_markdown_common_response_shapes(
     payload: dict[str, object], expected: str
 ) -> None:
     assert extract_glm_maas_markdown(payload) == expected
+
+
+def test_resolve_ocr_backend_produces_contract_v2_fields() -> None:
+    runtime = resolve_ocr_backend(get_settings())
+    assert runtime.backend_id
+    assert runtime.backend_mode in {"openai-compatible", "maas"}
+    assert runtime.hardware_path
+    assert runtime.fallback_chain
+    assert runtime.fallback_chain[0] == runtime.backend_id
+    assert runtime.reason_codes
+    assert runtime.reevaluate_after_s >= 1
+
+
+def test_resolve_ocr_backend_local_auto_uses_gpu_when_available() -> None:
+    settings = get_settings()
+    mutated = replace(settings, ocr=replace(settings.ocr, local_url="http://localhost:8001/v1"))
+    snapshot = HardwareCapabilitySnapshot(
+        os_platform="linux",
+        architecture="x86_64",
+        cpu_physical_cores=8,
+        cpu_logical_cores=16,
+        memory_total_mb=64000,
+        memory_available_mb=32000,
+        gpu_devices=(
+            GPUDeviceCapability(
+                index=0,
+                vendor="nvidia",
+                name="A100",
+                memory_total_mb=40536,
+                driver_version="550.54.15",
+                runtime_version="12.4",
+            ),
+        ),
+        detection_sources=("nvidia-smi",),
+        detection_warnings=(),
+    )
+    runtime = resolve_ocr_backend(mutated, capabilities=snapshot)
+    assert runtime.hardware_path == "gpu"
+    assert runtime.backend_id.endswith("-local-openai")
+    assert "policy.local.gpu-preferred" in runtime.reason_codes
+
+
+@pytest.mark.asyncio
+async def test_probe_ocr_backend_exposes_capabilities() -> None:
+    probe = await probe_ocr_backend(settings=get_settings())
+    assert probe.endpoint
+    assert probe.model
+    assert "supports_submit" in probe.capabilities
+    assert "supports_health" in probe.capabilities
+    assert "reason_codes" in probe.capabilities
+    assert "reevaluate_after_s" in probe.capabilities
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_ocr_backend_treats_reachable_4xx_as_healthy() -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(405))
+    async with httpx.AsyncClient(transport=transport) as client:
+        health = await healthcheck_ocr_backend(settings=get_settings(), client=client)
+    assert health.healthy is True
+    assert health.status_code == 405
 
 
 @pytest.mark.asyncio

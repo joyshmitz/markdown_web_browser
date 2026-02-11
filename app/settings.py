@@ -22,6 +22,7 @@ __all__ = [
     "WarningSettings",
     "DeduplicationSettings",
     "Settings",
+    "resolve_ocr_backend_defaults",
     "load_config",
     "get_settings",
 ]
@@ -146,6 +147,9 @@ class Settings:
             min=self.ocr.min_concurrency,
             max=self.ocr.max_concurrency,
         )
+        backend_id, backend_mode, hardware_path, fallback_chain, provider = (
+            resolve_ocr_backend_defaults(self.ocr)
+        )
         return ManifestEnvironment(
             cft_version=self.browser.cft_version,
             cft_label=self.browser.cft_label,
@@ -161,8 +165,13 @@ class Settings:
             screenshot_style_hash=self.browser.screenshot_style_hash,
             screenshot_mask_selectors=self.browser.screenshot_mask_selectors,
             ocr_model=self.ocr.model,
+            ocr_provider=provider,
             ocr_use_fp8=self.ocr.use_fp8,
             ocr_concurrency=concurrency,
+            ocr_backend_id=backend_id,
+            ocr_backend_mode=backend_mode,
+            ocr_hardware_path=hardware_path,
+            ocr_fallback_chain=fallback_chain,
         )
 
 
@@ -245,6 +254,40 @@ def _derive_screenshot_hash(
     }
     digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return digest[:8]
+
+
+def resolve_ocr_backend_defaults(
+    ocr: OCRSettings,
+) -> tuple[str, str, str, tuple[str, ...], str]:
+    """Infer backend provenance defaults from OCR settings.
+
+    Returns ``(backend_id, backend_mode, hardware_path, fallback_chain, provider)``.
+    The strategy stays backward-compatible with existing olmOCR OpenAI-compatible setups
+    while exposing structured fields required by contract-v2 manifests.
+    """
+
+    model_lower = ocr.model.lower()
+    provider = "glm-ocr" if "glm-ocr" in model_lower else "olmocr"
+    server_url = (ocr.server_url or "").strip().lower()
+    local_url = (ocr.local_url or "").strip().lower()
+
+    if local_url:
+        primary_id = f"{provider}-local-openai"
+        fallback_chain = [primary_id]
+        if server_url:
+            if "layout_parsing" in server_url or "open.bigmodel.cn" in server_url:
+                fallback_id = "glm-ocr-maas"
+            else:
+                fallback_id = f"{provider}-remote-openai"
+            if fallback_id != primary_id:
+                fallback_chain.append(fallback_id)
+        return primary_id, "openai-compatible", "local-auto", tuple(fallback_chain), provider
+
+    if "layout_parsing" in server_url or "open.bigmodel.cn" in server_url:
+        return "glm-ocr-maas", "maas", "remote", ("glm-ocr-maas",), "glm-ocr"
+
+    backend_id = f"{provider}-remote-openai"
+    return backend_id, "openai-compatible", "remote", (backend_id,), provider
 
 
 @lru_cache(maxsize=1)

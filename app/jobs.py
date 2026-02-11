@@ -31,7 +31,8 @@ from app.dom_links import (
     extract_links_from_markdown,
     serialize_links,
 )
-from app.ocr_client import OCRRequest, SubmitTilesResult, submit_tiles
+from app.hardware import get_host_capabilities
+from app.ocr_client import OCRRequest, SubmitTilesResult, resolve_ocr_backend, submit_tiles
 from app.schemas import JobCreateRequest, ManifestMetadata
 from app.settings import Settings, settings as global_settings
 from app.store import Store, build_store
@@ -96,8 +97,17 @@ def build_initial_snapshot(
     manifest = None
     active_settings = settings or global_settings
     if active_settings:
+        capability_snapshot = get_host_capabilities()
+        backend = resolve_ocr_backend(active_settings, capabilities=capability_snapshot)
         manifest = ManifestMetadata(
-            environment=active_settings.manifest_environment(playwright_version=PLAYWRIGHT_VERSION)
+            environment=active_settings.manifest_environment(playwright_version=PLAYWRIGHT_VERSION),
+            backend_id=backend.backend_id,
+            backend_mode=backend.backend_mode,
+            hardware_path=backend.hardware_path,
+            backend_reason_codes=list(backend.reason_codes),
+            backend_reevaluate_after_s=backend.reevaluate_after_s,
+            fallback_chain=list(backend.fallback_chain),
+            hardware_capabilities=capability_snapshot.to_dict(),
         )
 
     snapshot = JobSnapshot(
@@ -882,6 +892,13 @@ def _apply_ocr_metadata(manifest: CaptureManifest, result: SubmitTilesResult) ->
         }
         for batch in result.batches
     ]
+    manifest.backend_id = result.backend.backend_id
+    manifest.backend_mode = result.backend.backend_mode
+    manifest.hardware_path = result.backend.hardware_path
+    manifest.backend_reason_codes = list(result.backend.reason_codes)
+    manifest.backend_reevaluate_after_s = result.backend.reevaluate_after_s
+    manifest.fallback_chain = list(result.backend.fallback_chain)
+    manifest.hardware_capabilities = result.host_capabilities
     manifest.ocr_quota = {
         "limit": result.quota.limit,
         "used": result.quota.used,
@@ -945,6 +962,7 @@ def _build_capture_config(request: JobCreateRequest, settings: Settings) -> Capt
 
 def _build_cache_key(*, config: CaptureConfig, settings: Settings) -> str:
     normalized_url = _normalize_url(config.url)
+    backend = resolve_ocr_backend(settings, capabilities=get_host_capabilities())
     payload = {
         "url": normalized_url,
         "cft_version": settings.browser.cft_version,
@@ -962,6 +980,10 @@ def _build_cache_key(*, config: CaptureConfig, settings: Settings) -> str:
         "mask_selectors": list(settings.browser.screenshot_mask_selectors),
         "ocr_model": settings.ocr.model,
         "ocr_use_fp8": settings.ocr.use_fp8,
+        "ocr_backend_id": backend.backend_id,
+        "ocr_backend_mode": backend.backend_mode,
+        "ocr_hardware_path": backend.hardware_path,
+        "ocr_fallback_chain": list(backend.fallback_chain),
         "ocr_prompt_version": "v8_plain_text_accepted",  # Bump this when OCR prompt/model changes
         "profile_id": config.profile_id or "",
     }
@@ -1007,7 +1029,16 @@ def _summarize_ocr_batches(manifest: CaptureManifest) -> dict[str, Any] | None:
     summary: dict[str, Any] = {
         "total_batches": len(batches),
         "non_2xx_batches": non_2xx,
+        "backend_id": getattr(manifest, "backend_id", None),
+        "backend_mode": getattr(manifest, "backend_mode", None),
+        "hardware_path": getattr(manifest, "hardware_path", None),
+        "backend_reason_codes": getattr(manifest, "backend_reason_codes", None),
+        "backend_reevaluate_after_s": getattr(manifest, "backend_reevaluate_after_s", None),
     }
+    hardware = getattr(manifest, "hardware_capabilities", None) or {}
+    if isinstance(hardware, Mapping):
+        summary["has_gpu"] = hardware.get("has_gpu")
+        summary["gpu_count"] = hardware.get("gpu_count")
     if latencies:
         summary["avg_latency_ms"] = int(sum(latencies) / len(latencies))
         summary["max_latency_ms"] = int(max(latencies))

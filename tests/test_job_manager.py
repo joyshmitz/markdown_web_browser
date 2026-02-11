@@ -30,14 +30,14 @@ try:
 except OSError:  # pyvips missing in CI
 
     @dataclass
-    class ScrollPolicy:  # type: ignore[override]
+    class ScrollPolicy:
         settle_ms: int
         max_steps: int
         viewport_overlap_px: int
         viewport_step_px: int
 
     @dataclass
-    class SweepStats:  # type: ignore[override]
+    class SweepStats:
         sweep_count: int
         total_scroll_height: int
         shrink_events: int
@@ -46,7 +46,7 @@ except OSError:  # pyvips missing in CI
         overlap_match_ratio: float
 
     @dataclass
-    class CaptureManifest:  # type: ignore[override]
+    class CaptureManifest:
         url: str
         cft_label: str
         cft_version: str
@@ -72,13 +72,19 @@ except OSError:  # pyvips missing in CI
         profile_id: str | None = None
         cache_key: str | None = None
         cache_hit: bool = False
+        backend_id: str | None = None
+        backend_mode: str | None = None
+        hardware_path: str | None = None
+        backend_reason_codes: list | None = None
+        backend_reevaluate_after_s: int | None = None
+        fallback_chain: list | None = None
         ocr_ms: int | None = None
         stitch_ms: int | None = None
         ocr_batches: list | None = None
         ocr_quota: dict | None = None
 
     @dataclass
-    class CaptureResult:  # type: ignore[override]
+    class CaptureResult:
         tiles: list
         manifest: CaptureManifest
 
@@ -91,7 +97,10 @@ from app.tiler import TileSlice  # noqa: E402
 
 
 async def _fake_runner(*, job_id: str, url: str, store: Store, config=None):  # noqa: ANN001
-    manifest = CaptureManifest(
+    manifest_cls = cast(Any, CaptureManifest)
+    scroll_policy_cls = cast(Any, ScrollPolicy)
+    sweep_stats_cls = cast(Any, SweepStats)
+    manifest = manifest_cls(
         url=url,
         cft_label="Stable-1",
         cft_version="chrome-130",
@@ -105,13 +114,13 @@ async def _fake_runner(*, job_id: str, url: str, store: Store, config=None):  # 
         long_side_px=1288,
         capture_ms=100,
         tiles_total=1,
-        scroll_policy=ScrollPolicy(
+        scroll_policy=scroll_policy_cls(
             settle_ms=300,
             max_steps=10,
             viewport_overlap_px=120,
             viewport_step_px=1080,
         ),
-        sweep_stats=SweepStats(
+        sweep_stats=sweep_stats_cls(
             sweep_count=1,
             total_scroll_height=2000,
             shrink_events=0,
@@ -150,6 +159,18 @@ async def _fake_runner(*, job_id: str, url: str, store: Store, config=None):  # 
         ],
         profile_id=getattr(config, "profile_id", None),
         cache_key=getattr(config, "cache_key", None),
+        backend_id="olmocr-remote-openai",
+        backend_mode="openai-compatible",
+        hardware_path="remote",
+        backend_reason_codes=["policy.remote.fallback"],
+        backend_reevaluate_after_s=120,
+        fallback_chain=["olmocr-remote-openai"],
+        hardware_capabilities={
+            "cpu_logical_cores": 8,
+            "gpu_count": 0,
+            "has_gpu": False,
+            "preferred_hardware_path": "cpu",
+        },
     )
     tiles = [
         TileSlice(
@@ -168,7 +189,8 @@ async def _fake_runner(*, job_id: str, url: str, store: Store, config=None):  # 
     ]
     artifacts = store.write_tiles(job_id=job_id, tiles=tiles)
     store.write_manifest(job_id=job_id, manifest=manifest)
-    return CaptureResult(tiles=tiles, manifest=manifest), artifacts
+    result_cls = cast(Any, CaptureResult)
+    return result_cls(tiles=tiles, manifest=manifest), artifacts
 
 
 @pytest.mark.asyncio
@@ -300,6 +322,12 @@ async def test_job_manager_emits_ocr_event(tmp_path: Path):
     events = manager.get_events(job_id)
 
     assert any(entry.get("event") == "ocr_telemetry" for entry in events)
+    ocr_events = [entry for entry in events if entry.get("event") == "ocr_telemetry"]
+    assert ocr_events[-1]["data"]["backend_id"] == "olmocr-remote-openai"
+    assert ocr_events[-1]["data"]["backend_mode"] == "openai-compatible"
+    assert ocr_events[-1]["data"]["backend_reason_codes"] == ["policy.remote.fallback"]
+    assert ocr_events[-1]["data"]["backend_reevaluate_after_s"] == 120
+    assert ocr_events[-1]["data"]["gpu_count"] == 0
 
 
 @pytest.mark.asyncio

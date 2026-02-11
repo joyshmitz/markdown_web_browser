@@ -149,8 +149,13 @@ def test_store_persists_sweep_and_validation_metadata(tmp_path: Path) -> None:
             "screenshot_style_hash": "demo",
             "screenshot_mask_selectors": [],
             "ocr_model": "olmOCR-2-7B-1025-FP8",
+            "ocr_provider": "olmocr",
             "ocr_use_fp8": True,
             "ocr_concurrency": {"min": 2, "max": 8},
+            "ocr_backend_id": "olmocr-remote-openai",
+            "ocr_backend_mode": "openai-compatible",
+            "ocr_hardware_path": "remote",
+            "ocr_fallback_chain": ["olmocr-remote-openai"],
         },
         "timings": {"capture_ms": 1500, "ocr_ms": 3200, "stitch_ms": 400},
         "tiles_total": 8,
@@ -176,6 +181,10 @@ def test_store_persists_sweep_and_validation_metadata(tmp_path: Path) -> None:
     record = store.fetch_run("run-123")
     assert record is not None
     assert record.server_runtime == "granian"
+    assert record.backend_id == "olmocr-remote-openai"
+    assert record.backend_mode == "openai-compatible"
+    assert record.hardware_path == "remote"
+    assert record.fallback_chain == ["olmocr-remote-openai"]
     assert record.sweep_shrink_events == 2
     assert record.sweep_retry_attempts == 1
     assert record.sweep_overlap_pairs == 6
@@ -213,8 +222,13 @@ def _sample_manifest_metadata() -> ManifestMetadata:
             screenshot_style_hash="demo",
             screenshot_mask_selectors=(),
             ocr_model="olmOCR-2-7B-1025-FP8",
+            ocr_provider="olmocr",
             ocr_use_fp8=True,
             ocr_concurrency=ConcurrencyWindow(min=2, max=8),
+            ocr_backend_id="olmocr-remote-openai",
+            ocr_backend_mode="openai-compatible",
+            ocr_hardware_path="remote",
+            ocr_fallback_chain=("olmocr-remote-openai",),
         ),
         sweep_stats=ManifestSweepStats(
             sweep_count=3,
@@ -271,6 +285,10 @@ def test_store_accepts_pydantic_manifest(tmp_path: Path) -> None:
     assert record.ocr_ms == 4200
     assert record.overlap_match_ratio == 0.91
     assert record.validation_failure_count == 1
+    assert record.backend_id == "olmocr-remote-openai"
+    assert record.backend_mode == "openai-compatible"
+    assert record.hardware_path == "remote"
+    assert record.fallback_chain == ["olmocr-remote-openai"]
     assert record.seam_marker_count == 2
     assert record.seam_hash_count == 2
     assert getattr(record, "seam_markers_summary") == {
@@ -307,6 +325,31 @@ def test_store_read_manifest_roundtrip(tmp_path: Path) -> None:
     loaded = store.read_manifest(job_id)
     assert loaded["environment"]["cft_version"] == "chrome-131"
     assert loaded["timings"]["capture_ms"] == 1000
+
+
+def test_store_infers_backend_fields_for_legacy_manifest(tmp_path: Path) -> None:
+    store = _storage(tmp_path)
+    job_id = "run-legacy-backend"
+    store.allocate_run(
+        job_id=job_id,
+        url="https://example.org/legacy",
+        started_at=datetime(2025, 11, 8, 9, 35, tzinfo=timezone.utc),
+    )
+    manifest_dict = {
+        "environment": {
+            "cft_version": "chrome-131",
+            "ocr_model": "olmOCR-2-7B-1025-FP8",
+            "viewport": {"device_scale_factor": 2},
+        }
+    }
+    store.write_manifest(job_id=job_id, manifest=manifest_dict)
+
+    record = store.fetch_run(job_id)
+    assert record is not None
+    assert record.backend_id == "olmocr-remote-openai"
+    assert record.backend_mode == "openai-compatible"
+    assert record.hardware_path == "remote"
+    assert record.fallback_chain == ["olmocr-remote-openai"]
 
 
 def test_store_persists_ocr_batches_and_quota(tmp_path: Path) -> None:
