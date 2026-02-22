@@ -7,7 +7,7 @@
 #   wget -qO- https://raw.githubusercontent.com/anthropics/markdown_web_browser/main/install.sh | bash
 #
 # Options:
-#   --yes, -y              Skip all confirmations (non-interactive mode)
+#   --yes, -y, --easy-mode Skip all confirmations (non-interactive mode)
 #   --dir=PATH            Installation directory (default: ./markdown_web_browser)
 #   --no-deps             Skip system dependency installation
 #   --no-browsers         Skip Playwright browser installation
@@ -50,7 +50,7 @@ Markdown Web Browser - All-in-One Installer
 Usage: $0 [OPTIONS]
 
 Options:
-    --yes, -y              Skip all confirmations (non-interactive mode)
+    --yes, -y, --easy-mode Skip all confirmations (non-interactive mode)
     --dir=PATH            Installation directory (default: $DEFAULT_INSTALL_DIR)
     --no-deps             Skip system dependency installation
     --no-browsers         Skip Playwright browser installation
@@ -80,7 +80,7 @@ EOF
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --yes|-y)
+        --yes|-y|--easy-mode)
             SKIP_CONFIRM=true
             shift
             ;;
