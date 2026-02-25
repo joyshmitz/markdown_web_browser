@@ -169,7 +169,8 @@ install_uv() {
     fi
 
     # Add uv to PATH for current session
-    export PATH="$HOME/.cargo/bin:$PATH"
+    # uv 0.10+ installs to ~/.local/bin; older versions used ~/.cargo/bin
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
     if command_exists uv; then
         print_color "$GREEN" "✓ uv installed successfully"
@@ -312,7 +313,7 @@ detect_cft_version() {
     print_color "$BLUE" "Detecting Chrome for Testing version..."
 
     # Try to get version info from playwright
-    local version_output=$(uv run playwright install chromium --dry-run --channel=cft 2>&1 || true)
+    local version_output=$(uv run playwright install chromium --dry-run 2>&1 || true)
 
     # Extract version from output (format varies, try multiple patterns)
     local cft_version=""
@@ -348,11 +349,11 @@ install_playwright_browsers() {
     print_color "$YELLOW" "  Note: This installs the deterministic Chrome for Testing build,"
     print_color "$YELLOW" "        NOT regular Chromium, to ensure reproducible screenshots."
 
-    # CRITICAL FIX: Install Chrome for Testing with --channel=cft
-    uv run playwright install chromium --with-deps --channel=cft
+    # Install Chromium via Playwright (--channel=cft removed; unsupported in Playwright 1.57+)
+    uv run playwright install chromium --with-deps
 
     # Verify CfT installation with fallback checks
-    local verify_output=$(uv run playwright install chromium --dry-run --channel=cft 2>&1)
+    local verify_output=$(uv run playwright install chromium --dry-run 2>&1)
     if echo "$verify_output" | grep -qE "(is already installed|already exists)"; then
         print_color "$GREEN" "✓ Chrome for Testing installed successfully"
     elif [ -d "$HOME/.cache/ms-playwright" ] || [ -d "$HOME/Library/Caches/ms-playwright" ]; then
@@ -455,7 +456,7 @@ run_tests() {
         fi
 
         # Verify Chrome for Testing is actually installed
-        local cft_check=$(uv run playwright install chromium --dry-run --channel=cft 2>&1)
+        local cft_check=$(uv run playwright install chromium --dry-run 2>&1)
         if echo "$cft_check" | grep -qE "(is already installed|already exists)"; then
             print_color "$GREEN" "✓ Chrome for Testing is installed and ready"
         elif [ -d "$HOME/.cache/ms-playwright" ] || [ -d "$HOME/Library/Caches/ms-playwright" ]; then

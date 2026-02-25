@@ -2782,3 +2782,7 @@ def _print_webhook_list_error(
     else:
         console.print(f"[red]{detail}[/]")
     raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    cli()
