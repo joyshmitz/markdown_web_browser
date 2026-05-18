@@ -239,3 +239,6 @@ test_screenshot.png
 
 # Compiled test artifacts
 a.out
+
+# Claude Code local config (settings.local.json, scheduled_tasks.lock, etc.)
+.claude/
