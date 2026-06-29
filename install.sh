@@ -415,6 +415,50 @@ detect_cft_version() {
     echo "$cft_version"
 }
 
+# Print guidance for installing browser system dependencies manually.
+# Used when Playwright's automatic `--with-deps` step is unavailable for the
+# host distro (e.g. a Playwright release that does not yet recognize a brand
+# new Ubuntu version). This is advisory only and never aborts the install.
+print_browser_dep_notice() {
+    local os_type
+    os_type=$(detect_os)
+
+    print_color "$YELLOW" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print_color "$YELLOW" "⚠  System browser dependencies were NOT installed automatically."
+    print_color "$YELLOW" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    case "$os_type" in
+        debian)
+            print_color "$YELLOW" "  To run the bundled Chromium, install its runtime libraries manually:"
+            print_color "$YELLOW" "    sudo apt-get install -y \\"
+            print_color "$YELLOW" "      libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \\"
+            print_color "$YELLOW" "      libdrm2 libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 \\"
+            print_color "$YELLOW" "      libxrandr2 libgbm1 libxkbcommon0 libasound2 libpango-1.0-0 libcairo2"
+            print_color "$YELLOW" "  (Some package names vary by release, e.g. libasound2 -> libasound2t64.)"
+            ;;
+        redhat)
+            print_color "$YELLOW" "  Install Chromium runtime libraries with: sudo yum install -y \\"
+            print_color "$YELLOW" "    nss nspr atk at-spi2-atk cups-libs libdrm libXcomposite \\"
+            print_color "$YELLOW" "    libXdamage libXfixes libXrandr mesa-libgbm libxkbcommon alsa-lib"
+            ;;
+        arch)
+            print_color "$YELLOW" "  Install Chromium runtime libraries with: sudo pacman -S \\"
+            print_color "$YELLOW" "    nss nspr atk at-spi2-atk cups libdrm libxcomposite libxdamage \\"
+            print_color "$YELLOW" "    libxfixes libxrandr mesa libxkbcommon alsa-lib"
+            ;;
+        macos)
+            print_color "$YELLOW" "  No extra system packages are typically required on macOS."
+            ;;
+        *)
+            print_color "$YELLOW" "  Install the Chromium runtime libraries for your distribution manually."
+            ;;
+    esac
+    print_color "$YELLOW" ""
+    print_color "$YELLOW" "  Alternatively, mdwb works against system Chrome/Chromium without these:"
+    print_color "$YELLOW" "  install Google Chrome and run mdwb against it (channel=chrome), or"
+    print_color "$YELLOW" "  re-run this installer with --no-browsers."
+    print_color "$YELLOW" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
 # Function to install Playwright browsers
 install_playwright_browsers() {
     if [ "$INSTALL_BROWSERS" = false ]; then
@@ -430,19 +474,46 @@ install_playwright_browsers() {
     if [ "$(detect_os)" = "debian" ]; then
         wait_for_apt_locks
     fi
-    uv run playwright install chromium --with-deps
 
-    # Verify Chromium installation with fallback checks
+    # Try the full install (browser + apt system deps) first. On distro releases
+    # that a given Playwright version does not yet recognize (e.g. Ubuntu 26.04
+    # "resolute"), `--with-deps` aborts with errors such as:
+    #     Cannot install dependencies for ubuntu26.04-x64
+    #     Playwright does not support chromium on ubuntu26.04-x64
+    # We detect that by the command's own exit status (no distro version is
+    # hard-coded) and fall back to a browser-only install so the tool still
+    # works against the bundled Chromium or system Chrome. This whole step is
+    # best-effort and must never abort the overall installation.
+    if uv run playwright install chromium --with-deps; then
+        print_color "$GREEN" "✓ Playwright Chromium installed (with system dependencies)"
+    else
+        print_color "$YELLOW" "⚠ 'playwright install chromium --with-deps' failed on this system."
+        print_color "$YELLOW" "  This is expected when Playwright does not yet support this distro"
+        print_color "$YELLOW" "  release (common on brand-new Ubuntu versions). Falling back to a"
+        print_color "$YELLOW" "  browser-only install without automatic system-dependency resolution..."
+
+        if uv run playwright install chromium; then
+            print_color "$GREEN" "✓ Playwright Chromium browser installed (without system deps)"
+            print_browser_dep_notice
+        else
+            print_color "$YELLOW" "⚠ Playwright could not install its bundled Chromium on this host."
+            print_color "$YELLOW" "  Continuing anyway: mdwb can still run using system Chrome"
+            print_color "$YELLOW" "  (channel=chrome). See guidance below."
+            print_browser_dep_notice
+        fi
+    fi
+
+    # Verify Chromium installation with fallback checks (informational; non-fatal)
     local verify_output
-    verify_output=$(uv run playwright install chromium --dry-run 2>&1)
+    verify_output=$(uv run playwright install chromium --dry-run 2>&1 || true)
     if echo "$verify_output" | grep -qE "(is already installed|already exists)"; then
         print_color "$GREEN" "✓ Playwright Chromium installed successfully"
     elif [ -d "$HOME/.cache/ms-playwright" ] || [ -d "$HOME/Library/Caches/ms-playwright" ]; then
         print_color "$YELLOW" "⚠ Chromium verification uncertain, but browser cache exists - proceeding"
     else
-        print_color "$RED" "✗ Playwright Chromium installation may have failed"
-        print_color "$YELLOW" "  The system may not work correctly without Chromium"
-        return 1
+        print_color "$YELLOW" "⚠ Playwright Chromium was not installed on this host."
+        print_color "$YELLOW" "  The installer will continue; mdwb can still run against system Chrome"
+        print_color "$YELLOW" "  (channel=chrome), or re-run with browsers once your distro is supported."
     fi
 
     return 0
